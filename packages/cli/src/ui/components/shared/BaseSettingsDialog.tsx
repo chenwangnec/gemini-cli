@@ -24,6 +24,7 @@ import { useSettingsNavigation } from '../../hooks/useSettingsNavigation.js';
 import { useInlineEditBuffer } from '../../hooks/useInlineEditBuffer.js';
 import { formatCommand } from '../../key/keybindingUtils.js';
 import { useKeyMatchers } from '../../hooks/useKeyMatchers.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 
 /**
  * Represents a single item in the settings dialog.
@@ -67,7 +68,7 @@ export interface BaseSettingsDialogProps {
   searchBuffer?: TextBuffer;
 
   // Items - parent provides the list
-  /** List of items to display */
+  /** List of items provided by the parent */
   items: SettingsDialogItem[];
 
   // Scope selector
@@ -118,7 +119,6 @@ export interface BaseSettingsDialogProps {
 
 /**
  * A base settings dialog component that handles rendering, layout, and keyboard navigation.
- * Parent components handle business logic (saving, filtering, etc.) via callbacks.
  */
 export function BaseSettingsDialog({
   title,
@@ -143,7 +143,11 @@ export function BaseSettingsDialog({
 }: BaseSettingsDialogProps): React.JSX.Element {
   const globalKeyMatchers = useKeyMatchers();
   const keyMatchers = customKeyMatchers ?? globalKeyMatchers;
-  // Calculate effective max items and scope visibility based on terminal height
+  const settings = useSettings();
+
+  // @ts-ignore
+  const hudLang = settings.merged.ui?.footer?.hud?.language || 'en';
+
   const { effectiveMaxItemsToShow, finalShowScopeSelector } = useMemo(() => {
     const initialShowScope = showScopeSelector;
     const initialMaxItems = maxItemsToShow;
@@ -155,10 +159,8 @@ export function BaseSettingsDialog({
       };
     }
 
-    // Layout constants based on BaseSettingsDialog structure:
     const DIALOG_PADDING = 4;
     const SETTINGS_TITLE_HEIGHT = 1;
-    // Account for the unconditional spacer below search/title section
     const SEARCH_SECTION_HEIGHT = searchEnabled ? 5 : 1;
     const SCROLL_ARROWS_HEIGHT = 2;
     const ITEMS_SPACING_AFTER = 1;
@@ -177,7 +179,6 @@ export function BaseSettingsDialog({
       HELP_TEXT_HEIGHT +
       FOOTER_CONTENT_HEIGHT;
 
-    // Calculate max items with scope selector
     const heightWithScope = baseFixedHeight + SCOPE_SECTION_HEIGHT;
     const availableForItemsWithScope = currentAvailableHeight - heightWithScope;
     const maxItemsWithScope = Math.max(
@@ -185,7 +186,6 @@ export function BaseSettingsDialog({
       Math.floor(availableForItemsWithScope / ITEM_HEIGHT),
     );
 
-    // Calculate max items without scope selector
     const availableForItemsWithoutScope =
       currentAvailableHeight - baseFixedHeight;
     const maxItemsWithoutScope = Math.max(
@@ -193,12 +193,10 @@ export function BaseSettingsDialog({
       Math.floor(availableForItemsWithoutScope / ITEM_HEIGHT),
     );
 
-    // In small terminals, hide scope selector if it would allow more items to show
     let shouldShowScope = initialShowScope;
     let maxItems = initialShowScope ? maxItemsWithScope : maxItemsWithoutScope;
 
     if (initialShowScope && availableHeight < 25) {
-      // Hide scope selector if it gains us more than 1 extra item
       if (maxItemsWithoutScope > maxItemsWithScope + 1) {
         shouldShowScope = false;
         maxItems = maxItemsWithoutScope;
@@ -218,7 +216,6 @@ export function BaseSettingsDialog({
     footer,
   ]);
 
-  // Internal state
   const { activeIndex, windowStart, moveUp, moveDown } = useSettingsNavigation({
     items,
     maxItemsToShow: effectiveMaxItemsToShow,
@@ -248,26 +245,29 @@ export function BaseSettingsDialog({
       ? 'settings'
       : focusSection;
 
-  // Scope selector items
-  const scopeItems = getScopeItems().map((item) => ({
-    ...item,
-    key: item.value,
-  }));
+  const scopeItems = getScopeItems().map((item) => {
+    let label = item.label;
+    if (hudLang === 'zh') {
+      if (label === 'User') label = '用户 (全局)';
+      if (label === 'Workspace') label = '工作区 (当前目录)';
+      if (label === 'System') label = '系统';
+    }
+    return {
+      ...item,
+      label,
+      key: item.value,
+    };
+  });
 
-  // Calculate visible items based on scroll offset
   const visibleItems = items.slice(
     windowStart,
     windowStart + effectiveMaxItemsToShow,
   );
 
-  // Show scroll indicators if there are more items than can be displayed
   const showScrollUp = items.length > effectiveMaxItemsToShow;
   const showScrollDown = items.length > effectiveMaxItemsToShow;
-
-  // Get current item
   const currentItem = items[activeIndex];
 
-  // Handle scope changes (for RadioButtonSelect)
   const handleScopeChange = useCallback(
     (scope: LoadableSettingScope) => {
       onScopeChange?.(scope);
@@ -275,20 +275,14 @@ export function BaseSettingsDialog({
     [onScopeChange],
   );
 
-  // Keyboard handling
   useKeypress(
     (key: Key) => {
-      // Let parent handle custom keys first (only if not editing)
-      if (!editingKey && onKeyPress?.(key, currentItem)) {
-        return;
-      }
+      if (!editingKey && onKeyPress?.(key, currentItem)) return;
 
-      // Edit mode handling
       if (editingKey) {
         const item = items.find((i) => i.key === editingKey);
         const type = item?.type ?? 'string';
 
-        // Navigation within edit buffer
         if (keyMatchers[Command.MOVE_LEFT](key)) {
           editDispatch({ type: 'MOVE_LEFT' });
           return;
@@ -305,49 +299,32 @@ export function BaseSettingsDialog({
           editDispatch({ type: 'END' });
           return;
         }
-
-        // Backspace
         if (keyMatchers[Command.DELETE_CHAR_LEFT](key)) {
           editDispatch({ type: 'DELETE_LEFT' });
           return;
         }
-
-        // Delete
         if (keyMatchers[Command.DELETE_CHAR_RIGHT](key)) {
           editDispatch({ type: 'DELETE_RIGHT' });
           return;
         }
-
-        // Escape in edit mode - commit (consistent with SettingsDialog)
         if (keyMatchers[Command.ESCAPE](key)) {
           commitEdit();
           return;
         }
-
-        // Enter in edit mode - commit
         if (keyMatchers[Command.RETURN](key)) {
           commitEdit();
           return;
         }
-
-        // Up/Down in edit mode - commit and navigate.
-        // Only trigger on non-insertable keys (arrow keys) so that typing
-        // j/k characters into the edit buffer is not intercepted.
         if (keyMatchers[Command.DIALOG_NAVIGATION_UP](key) && !key.insertable) {
           commitEdit();
           moveUp();
           return;
         }
-        if (
-          keyMatchers[Command.DIALOG_NAVIGATION_DOWN](key) &&
-          !key.insertable
-        ) {
+        if (keyMatchers[Command.DIALOG_NAVIGATION_DOWN](key) && !key.insertable) {
           commitEdit();
           moveDown();
           return;
         }
-
-        // Character input
         if (key.sequence) {
           editDispatch({
             type: 'INSERT_CHAR',
@@ -358,9 +335,7 @@ export function BaseSettingsDialog({
         return;
       }
 
-      // Not in edit mode - handle navigation and actions
       if (effectiveFocusSection === 'settings') {
-        // Up/Down navigation with wrap-around
         if (keyMatchers[Command.DIALOG_NAVIGATION_UP](key)) {
           moveUp();
           return true;
@@ -369,54 +344,45 @@ export function BaseSettingsDialog({
           moveDown();
           return true;
         }
-
-        // Enter - toggle or start edit
         if (keyMatchers[Command.RETURN](key) && currentItem) {
           if (currentItem.type === 'boolean' || currentItem.type === 'enum') {
             onItemToggle(currentItem.key, currentItem);
           } else {
-            // Start editing for string/number/array/object
             const rawVal = currentItem.rawValue;
-            const initialValue =
-              currentItem.editValue ??
-              (rawVal !== undefined ? String(rawVal) : '');
+            const initialValue = currentItem.editValue ?? (rawVal !== undefined ? String(rawVal) : '');
             startEditing(currentItem.key, initialValue);
           }
           return true;
         }
-
-        // Ctrl+L - clear/reset to default (using only Ctrl+L to avoid Ctrl+C exit conflict)
         if (keyMatchers[Command.CLEAR_SCREEN](key) && currentItem) {
           onItemClear(currentItem.key, currentItem);
           return true;
         }
-
-        // Number keys for quick edit on number fields
         if (currentItem?.type === 'number' && /^[0-9]$/.test(key.sequence)) {
           startEditing(currentItem.key, key.sequence);
           return true;
         }
       }
 
-      // Tab - switch focus section
       if (key.name === 'tab' && finalShowScopeSelector) {
         setFocusSection((s) => (s === 'settings' ? 'scope' : 'settings'));
         return;
       }
 
-      // Escape - close dialog
       if (keyMatchers[Command.ESCAPE](key)) {
         onClose();
         return;
       }
-
-      return;
     },
-    {
-      isActive: true,
-      priority: effectiveFocusSection === 'settings',
-    },
+    { isActive: true, priority: effectiveFocusSection === 'settings' },
   );
+
+  const placeholder = hudLang === 'zh' ? '搜索以过滤...' : searchPlaceholder;
+  const noMatches = hudLang === 'zh' ? '未找到匹配项。' : 'No matches found.';
+  const applyTo = hudLang === 'zh' ? '应用到' : 'Apply To';
+  const helpText = hudLang === 'zh' 
+    ? `(按 Enter 选择, ${formatCommand(Command.CLEAR_SCREEN)} 重置${finalShowScopeSelector ? ', Tab 切换焦点' : ''}, Esc 关闭)`
+    : `(Use Enter to select, ${formatCommand(Command.CLEAR_SCREEN)} to reset${finalShowScopeSelector ? ', Tab to change focus' : ''}, Esc to close)`;
 
   return (
     <Box
@@ -428,28 +394,17 @@ export function BaseSettingsDialog({
       height="100%"
     >
       <Box flexDirection="column" flexGrow={1}>
-        {/* Title */}
         <Box marginX={1}>
-          <Text
-            bold={effectiveFocusSection === 'settings' && !editingKey}
-            wrap="truncate"
-          >
+          <Text bold={effectiveFocusSection === 'settings' && !editingKey} wrap="truncate">
             {effectiveFocusSection === 'settings' ? '> ' : '  '}
             {title}{' '}
           </Text>
         </Box>
 
-        {/* Search input (if enabled) */}
         {searchEnabled && searchBuffer && (
           <Box
             borderStyle="round"
-            borderColor={
-              editingKey
-                ? theme.border.default
-                : effectiveFocusSection === 'settings'
-                  ? theme.ui.focus
-                  : theme.border.default
-            }
+            borderColor={editingKey ? theme.border.default : effectiveFocusSection === 'settings' ? theme.ui.focus : theme.border.default}
             paddingX={1}
             height={3}
             marginTop={1}
@@ -457,17 +412,16 @@ export function BaseSettingsDialog({
             <TextInput
               focus={effectiveFocusSection === 'settings' && !editingKey}
               buffer={searchBuffer}
-              placeholder={searchPlaceholder}
+              placeholder={placeholder}
             />
           </Box>
         )}
 
         <Box height={1} />
 
-        {/* Items list */}
         {visibleItems.length === 0 ? (
           <Box marginX={1} height={1} flexDirection="column">
-            <Text color={theme.text.secondary}>No matches found.</Text>
+            <Text color={theme.text.secondary}>{noMatches}</Text>
           </Box>
         ) : (
           <>
@@ -478,97 +432,39 @@ export function BaseSettingsDialog({
             )}
             {visibleItems.map((item, idx) => {
               const globalIndex = idx + windowStart;
-              const isActive =
-                effectiveFocusSection === 'settings' &&
-                activeIndex === globalIndex;
-
-              // Compute display value with edit mode cursor
+              const isActive = effectiveFocusSection === 'settings' && activeIndex === globalIndex;
               let displayValue: string;
               if (editingKey === item.key) {
-                // Show edit buffer with cursor highlighting
                 if (cursorVisible && editCursorPos < cpLen(editBuffer)) {
-                  // Cursor is in the middle or at start of text
                   const beforeCursor = cpSlice(editBuffer, 0, editCursorPos);
-                  const atCursor = cpSlice(
-                    editBuffer,
-                    editCursorPos,
-                    editCursorPos + 1,
-                  );
+                  const atCursor = cpSlice(editBuffer, editCursorPos, editCursorPos + 1);
                   const afterCursor = cpSlice(editBuffer, editCursorPos + 1);
-                  displayValue =
-                    beforeCursor + chalk.inverse(atCursor) + afterCursor;
+                  displayValue = beforeCursor + chalk.inverse(atCursor) + afterCursor;
                 } else if (editCursorPos >= cpLen(editBuffer)) {
-                  // Cursor is at the end - show inverted space
-                  displayValue =
-                    editBuffer + (cursorVisible ? chalk.inverse(' ') : ' ');
-                } else {
-                  // Cursor not visible
-                  displayValue = editBuffer;
-                }
-              } else {
-                displayValue = item.displayValue;
-              }
+                  displayValue = editBuffer + (cursorVisible ? chalk.inverse(' ') : ' ');
+                } else displayValue = editBuffer;
+              } else displayValue = item.displayValue;
 
               return (
                 <React.Fragment key={item.key}>
-                  <Box
-                    marginX={1}
-                    flexDirection="row"
-                    alignItems="flex-start"
-                    backgroundColor={
-                      isActive ? theme.background.focus : undefined
-                    }
-                  >
+                  <Box marginX={1} flexDirection="row" alignItems="flex-start" backgroundColor={isActive ? theme.background.focus : undefined}>
                     <Box minWidth={2} flexShrink={0}>
-                      <Text
-                        color={isActive ? theme.ui.focus : theme.text.secondary}
-                      >
-                        {isActive ? '●' : ''}
-                      </Text>
+                      <Text color={isActive ? theme.ui.focus : theme.text.secondary}>{isActive ? '●' : ''}</Text>
                     </Box>
-                    <Box
-                      flexDirection="row"
-                      flexGrow={1}
-                      minWidth={0}
-                      alignItems="flex-start"
-                    >
-                      <Box
-                        flexDirection="column"
-                        width={maxLabelWidth}
-                        minWidth={0}
-                      >
-                        <Text
-                          color={isActive ? theme.ui.focus : theme.text.primary}
-                        >
+                    <Box flexDirection="row" flexGrow={1} minWidth={0} alignItems="flex-start">
+                      <Box flexDirection="column" width={maxLabelWidth} minWidth={0}>
+                        <Text color={isActive ? theme.ui.focus : theme.text.primary}>
                           {item.label}
-                          {item.scopeMessage && (
-                            <Text color={theme.text.secondary}>
-                              {' '}
-                              {item.scopeMessage}
-                            </Text>
-                          )}
+                          {item.scopeMessage && <Text color={theme.text.secondary}> {item.scopeMessage}</Text>}
                         </Text>
-                        <Text color={theme.text.secondary} wrap="truncate">
-                          {item.description ?? ''}
-                        </Text>
+                        <Text color={theme.text.secondary} wrap="truncate">{item.description ?? ''}</Text>
                       </Box>
                       <Box minWidth={3} />
                       <Box flexShrink={0}>
                         <Text
-                          color={
-                            isActive
-                              ? theme.ui.focus
-                              : item.isGreyedOut
-                                ? theme.text.secondary
-                                : theme.text.primary
-                          }
-                          terminalCursorFocus={
-                            editingKey === item.key && cursorVisible
-                          }
-                          terminalCursorPosition={cpIndexToOffset(
-                            editBuffer,
-                            editCursorPos,
-                          )}
+                          color={isActive ? theme.ui.focus : item.isGreyedOut ? theme.text.secondary : theme.text.primary}
+                          terminalCursorFocus={editingKey === item.key && cursorVisible}
+                          terminalCursorPosition={cpIndexToOffset(editBuffer, editCursorPos)}
                         >
                           {displayValue}
                         </Text>
@@ -589,17 +485,14 @@ export function BaseSettingsDialog({
 
         <Box height={1} />
 
-        {/* Scope Selection */}
         {finalShowScopeSelector && (
           <Box marginX={1} flexDirection="column">
             <Text bold={effectiveFocusSection === 'scope'} wrap="truncate">
-              {effectiveFocusSection === 'scope' ? '> ' : '  '}Apply To
+              {effectiveFocusSection === 'scope' ? '> ' : '  '}{applyTo}
             </Text>
             <RadioButtonSelect
               items={scopeItems}
-              initialIndex={scopeItems.findIndex(
-                (item) => item.value === selectedScope,
-              )}
+              initialIndex={scopeItems.findIndex((item) => item.value === selectedScope)}
               onSelect={handleScopeChange}
               onHighlight={handleScopeChange}
               isFocused={effectiveFocusSection === 'scope'}
@@ -611,16 +504,10 @@ export function BaseSettingsDialog({
 
         <Box height={1} />
 
-        {/* Help text */}
         <Box marginX={1}>
-          <Text color={theme.text.secondary}>
-            (Use Enter to select, {formatCommand(Command.CLEAR_SCREEN)} to reset
-            {finalShowScopeSelector ? ', Tab to change focus' : ''}, Esc to
-            close)
-          </Text>
+          <Text color={theme.text.secondary}>{helpText}</Text>
         </Box>
 
-        {/* Footer content (e.g., restart prompt) */}
         {footer && <Box marginX={1}>{footer.content}</Box>}
       </Box>
     </Box>

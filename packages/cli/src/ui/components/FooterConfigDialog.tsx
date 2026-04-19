@@ -319,9 +319,9 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
       paddingY={includePadding ? 1 : 0}
       width="100%"
     >
-      <Text bold>Configure Footer{'\n'}</Text>
+      <Text bold>配置页脚{'\n'}</Text>
       <Text color={theme.text.secondary}>
-        Select which items to display in the footer.
+        选择要在页脚中显示的项。
       </Text>
 
       <Box flexDirection="column" marginTop={1} flexGrow={1}>
@@ -379,9 +379,9 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
       </Box>
 
       <DialogFooter
-        primaryAction="Enter to select"
-        navigationActions="↑/↓ to navigate · ←/→ to reorder"
-        cancelAction="Esc to close"
+        primaryAction="回车键: 选择/切换"
+        navigationActions="↑/↓: 移动光标 · ←/→: 重新排序"
+        cancelAction="Esc: 关闭并保存"
       />
 
       <Box
@@ -391,7 +391,7 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
         paddingX={1}
         flexDirection="column"
       >
-        <Text bold>Preview:</Text>
+        <Text bold>预览:</Text>
         <Box flexDirection="row" width="100%">
           {previewContent}
         </Box>

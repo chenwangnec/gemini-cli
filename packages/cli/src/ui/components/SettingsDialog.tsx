@@ -67,9 +67,32 @@ const KEY_CTRL_P = new KeyBinding('ctrl+p');
 const KEY_DOWN = new KeyBinding('down');
 const KEY_CTRL_N = new KeyBinding('ctrl+n');
 
-// Create a snapshot of the initial per-scope state of Restart Required Settings
-// This creates a nested map of the form
-// restartRequiredSetting -> Map { scopeName -> value }
+// --- Detailed Settings Translations ---
+const SETTINGS_ZH: Record<string, { label: string; description?: string; options?: Record<string | number, string> }> = {
+  'general.vimMode': { label: 'Vim 模式', description: '启用 Vim 快捷键绑定' },
+  'general.defaultApprovalMode': { 
+    label: '默认审批模式', 
+    description: '工具执行的默认审批策略',
+    options: { 'default': '默认 (询问)', 'auto_edit': '自动修改', 'plan': '规划模式 (只读)' }
+  },
+  'ui.theme': { label: '界面主题', description: 'CLI 的颜色主题' },
+  'ui.footer.hud.enabled': { label: '开启 HUD 仪表盘', description: '启用多行实时监控状态栏' },
+  'ui.footer.hud.language': { 
+    label: '界面语言', 
+    description: '设置 HUD 和系统文本语言',
+    options: { 'en': 'English', 'zh': '简体中文' }
+  },
+  'ui.footer.hideCWD': { label: '隐藏工作路径', description: '在页脚隐藏当前目录路径' },
+  'ui.footer.hideModelInfo': { label: '隐藏模型信息', description: '在页脚隐藏模型名称和上下文' },
+  'ui.showLineNumbers': { label: '显示行号', description: '在渲染代码块时显示行号' },
+  'model.name': { label: '对话模型', description: '设置默认使用的 Gemini 模型' },
+  'model.compressionThreshold': { label: '上下文压缩阈值', description: '触发上下文压缩的使用率比例' },
+  'context.discoveryMaxDirs': { label: '最大搜索目录深度', description: '搜索 GEMINI.md 文件的最大目录数' },
+  'tools.useRipgrep': { label: '使用 Ripgrep', description: '使用 ripgrep 提高文件搜索速度' },
+  'security.folderTrust.enabled': { label: '文件夹信任管理', description: '启用或禁用文件夹信任检查' },
+  'advanced.autoConfigureMemory': { label: '自动配置内存上限', description: '自动根据系统配置 Node.js 内存限制' },
+};
+
 function getActiveRestartRequiredSettings(
   settings: SettingsState,
 ): Map<string, Map<string, string>> {
@@ -83,7 +106,6 @@ function getActiveRestartRequiredSettings(
   for (const key of getDialogRestartRequiredSettings()) {
     const scopeMap = new Map<string, string>();
     for (const [scopeName, scopeSettings] of scopes) {
-      // Raw per-scope value (undefined if not in file)
       const value = isInSettingsScope(key, scopeSettings)
         ? getEffectiveValue(key, scopeSettings)
         : undefined;
@@ -99,23 +121,21 @@ export function SettingsDialog({
   onRestartRequest,
   availableTerminalHeight,
 }: SettingsDialogProps): React.JSX.Element {
-  // Reactive settings from store (re-renders on any settings change)
   const { settings, setSetting } = useSettingsStore();
+  const [selectedScope, setSelectedScope] = useState<LoadableSettingScope>(SettingScope.User);
 
-  const [selectedScope, setSelectedScope] = useState<LoadableSettingScope>(
-    SettingScope.User,
-  );
+  // @ts-ignore
+  const hudLang = settings.merged.ui?.footer?.hud?.language || 'en';
 
-  // Snapshot restart-required values at mount time for diff tracking
   const [activeRestartRequiredSettings] = useState(() =>
     getActiveRestartRequiredSettings(settings),
   );
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredKeys, setFilteredKeys] = useState<string[]>(() =>
     getDialogSettingKeys(),
   );
+
   const { fzfInstance, searchMap } = useMemo(() => {
     const keys = getDialogSettingKeys();
     const map = new Map<string, string>();
@@ -123,20 +143,18 @@ export function SettingsDialog({
 
     keys.forEach((key) => {
       const def = getSettingDefinition(key);
-      if (def?.label) {
-        searchItems.push(def.label);
-        map.set(def.label.toLowerCase(), key);
+      let label = def?.label || key;
+      if (hudLang === 'zh' && SETTINGS_ZH[key]) {
+        label = SETTINGS_ZH[key].label;
       }
+      searchItems.push(label);
+      map.set(label.toLowerCase(), key);
     });
 
-    const fzf = new AsyncFzf(searchItems, {
-      fuzzy: 'v2',
-      casing: 'case-insensitive',
-    });
+    const fzf = new AsyncFzf(searchItems, { fuzzy: 'v2', casing: 'case-insensitive' });
     return { fzfInstance: fzf, searchMap: map };
-  }, []);
+  }, [hudLang]);
 
-  // Perform search
   useEffect(() => {
     let active = true;
     if (!searchQuery.trim() || !fzfInstance) {
@@ -145,11 +163,8 @@ export function SettingsDialog({
     }
 
     const doSearch = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const results = await fzfInstance.find(searchQuery);
-
       if (!active) return;
-
       const matchedKeys = new Set<string>();
       results.forEach((res: FzfResult) => {
         const key = searchMap.get(res.item.toLowerCase());
@@ -158,17 +173,10 @@ export function SettingsDialog({
       setFilteredKeys(Array.from(matchedKeys));
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    doSearch();
-
-    return () => {
-      active = false;
-    };
+    void doSearch();
+    return () => { active = false; };
   }, [searchQuery, fzfInstance, searchMap]);
 
-  // Track whether a restart is required to apply the changes in the Settings json file
-  // This does not care for inheritance
-  // It checks whether a proposed change from this UI to a settings.json file requires a restart to take effect in the app
   const pendingRestartRequiredSettings = useMemo(() => {
     const changed = new Set<string>();
     const scopes: Array<[string, Settings]> = [
@@ -177,7 +185,6 @@ export function SettingsDialog({
       ['System', settings.system.settings],
     ];
 
-    // Iterate through the nested map snapshot in activeRestartRequiredSettings, diff with current settings
     for (const [key, initialScopeMap] of activeRestartRequiredSettings) {
       for (const [scopeName, scopeSettings] of scopes) {
         const currentValue = isInSettingsScope(key, scopeSettings)
@@ -186,7 +193,7 @@ export function SettingsDialog({
         const initialJson = initialScopeMap.get(scopeName);
         if (JSON.stringify(currentValue) !== initialJson) {
           changed.add(key);
-          break; // one scope changed is enough
+          break;
         }
       }
     }
@@ -195,7 +202,6 @@ export function SettingsDialog({
 
   const showRestartPrompt = pendingRestartRequiredSettings.size > 0;
 
-  // Calculate max width for the left column (Label/Description) to keep values aligned or close
   const maxLabelOrDescriptionWidth = useMemo(() => {
     const allKeys = getDialogSettingKeys();
     let max = 0;
@@ -203,30 +209,24 @@ export function SettingsDialog({
       const def = getSettingDefinition(key);
       if (!def) continue;
 
-      const scopeMessage = getScopeMessageForSetting(
-        key,
-        selectedScope,
-        settings,
-      );
-      const label = def.label || key;
+      const scopeMessage = getScopeMessageForSetting(key, selectedScope, settings);
+      let label = def.label || key;
+      let description = def.description;
+      if (hudLang === 'zh' && SETTINGS_ZH[key]) {
+        label = SETTINGS_ZH[key].label;
+        description = SETTINGS_ZH[key].description || description;
+      }
+
       const labelFull = label + (scopeMessage ? ` ${scopeMessage}` : '');
       const lWidth = getCachedStringWidth(labelFull);
-      const dWidth = def.description
-        ? getCachedStringWidth(def.description)
-        : 0;
-
+      const dWidth = description ? getCachedStringWidth(description) : 0;
       max = Math.max(max, lWidth, dWidth);
     }
     return max;
-  }, [selectedScope, settings]);
+  }, [selectedScope, settings, hudLang]);
 
-  // Search input buffer
-  const searchBuffer = useSearchBuffer({
-    initialText: '',
-    onChange: setSearchQuery,
-  });
+  const searchBuffer = useSearchBuffer({ initialText: '', onChange: setSearchQuery });
 
-  // Generate items for BaseSettingsDialog
   const settingKeys = searchQuery ? filteredKeys : getDialogSettingKeys();
   const items: SettingsDialogItem[] = useMemo(() => {
     const scopeSettings = settings.forScope(selectedScope).settings;
@@ -235,130 +235,81 @@ export function SettingsDialog({
     return settingKeys.map((key) => {
       const definition = getSettingDefinition(key);
       const type: SettingsType = definition?.type ?? 'string';
+      
+      let displayValue = getDisplayValue(key, scopeSettings, mergedSettings);
+      
+      // Localize enum display values
+      if (hudLang === 'zh' && SETTINGS_ZH[key]?.options) {
+        const rawVal = getEffectiveValue(key, scopeSettings);
+        const translatedLabel = (SETTINGS_ZH[key].options as any)[String(rawVal)];
+        if (translatedLabel) {
+          displayValue = isInSettingsScope(key, scopeSettings) ? `${translatedLabel}*` : translatedLabel;
+        }
+      }
 
-      // Get the display value (with * indicator if modified)
-      const displayValue = getDisplayValue(key, scopeSettings, mergedSettings);
-
-      // Get the scope message (e.g., "(Modified in Workspace)")
-      const scopeMessage = getScopeMessageForSetting(
-        key,
-        selectedScope,
-        settings,
-      );
-
-      // Grey out values that defer to defaults
+      const scopeMessage = getScopeMessageForSetting(key, selectedScope, settings);
       const isGreyedOut = !isInSettingsScope(key, scopeSettings);
-
-      // Some settings can be edited by an inline editor
       const rawValue = getEffectiveValue(key, scopeSettings);
-      // The inline editor needs a string but non primitive settings like Arrays and Objects exist
       const editValue = getEditValue(type, rawValue);
 
-      return {
-        key,
-        label: definition?.label || key,
-        description: definition?.description,
-        type,
-        displayValue,
-        isGreyedOut,
-        scopeMessage,
-        rawValue,
-        editValue,
-      };
+      let label = definition?.label || key;
+      let description = definition?.description;
+      if (hudLang === 'zh' && SETTINGS_ZH[key]) {
+        label = SETTINGS_ZH[key].label;
+        description = SETTINGS_ZH[key].description || description;
+      }
+
+      return { key, label, description, type, displayValue, isGreyedOut, scopeMessage, rawValue, editValue };
     });
-  }, [settingKeys, selectedScope, settings]);
+  }, [settingKeys, selectedScope, settings, hudLang]);
 
-  const handleScopeChange = useCallback((scope: LoadableSettingScope) => {
-    setSelectedScope(scope);
-  }, []);
+  const handleScopeChange = useCallback((scope: LoadableSettingScope) => { setSelectedScope(scope); }, []);
 
-  // Toggle handler for boolean/enum settings
   const handleItemToggle = useCallback(
     (key: string, _item: SettingsDialogItem) => {
       const definition = getSettingDefinition(key);
-      if (!TOGGLE_TYPES.has(definition?.type)) {
-        return;
-      }
-
+      if (!TOGGLE_TYPES.has(definition?.type)) return;
       const scopeSettings = settings.forScope(selectedScope).settings;
       const currentValue = getEffectiveValue(key, scopeSettings);
       let newValue: SettingsValue;
 
       if (definition?.type === 'boolean') {
-        if (typeof currentValue !== 'boolean') {
-          return;
-        }
         newValue = !currentValue;
       } else if (definition?.type === 'enum' && definition.options) {
         const options = definition.options;
-        if (options.length === 0) {
-          return;
-        }
-        const currentIndex = options?.findIndex(
-          (opt) => opt.value === currentValue,
-        );
-        if (currentIndex !== -1 && currentIndex < options.length - 1) {
-          newValue = options[currentIndex + 1].value;
-        } else {
-          newValue = options[0].value; // loop back to start.
-        }
-      } else {
-        return;
-      }
+        const currentIndex = options.findIndex((opt) => opt.value === currentValue);
+        newValue = (currentIndex !== -1 && currentIndex < options.length - 1) 
+          ? options[currentIndex + 1].value 
+          : options[0].value;
+      } else return;
 
-      debugLogger.log(
-        `[DEBUG SettingsDialog] Saving ${key} immediately with value:`,
-        newValue,
-      );
       setSetting(selectedScope, key, newValue);
     },
     [settings, selectedScope, setSetting],
   );
 
-  // For inline editor
   const handleEditCommit = useCallback(
     (key: string, newValue: string, _item: SettingsDialogItem) => {
       const definition = getSettingDefinition(key);
-      const type: SettingsType = definition?.type ?? 'string';
-      const parsed = parseEditedValue(type, newValue);
-
-      if (parsed === null) {
-        return;
-      }
-
-      setSetting(selectedScope, key, parsed);
+      const parsed = parseEditedValue(definition?.type ?? 'string', newValue);
+      if (parsed !== null) setSetting(selectedScope, key, parsed);
     },
     [selectedScope, setSetting],
   );
 
-  // Clear/reset handler - removes the value from settings.json so it falls back to default
-  const handleItemClear = useCallback(
-    (key: string, _item: SettingsDialogItem) => {
-      setSetting(selectedScope, key, undefined);
-    },
-    [selectedScope, setSetting],
-  );
+  const handleItemClear = useCallback((key: string) => { setSetting(selectedScope, key, undefined); }, [selectedScope, setSetting]);
 
-  const handleClose = useCallback(() => {
-    onSelect(undefined, selectedScope as SettingScope);
-  }, [onSelect, selectedScope]);
+  const handleClose = useCallback(() => { onSelect(undefined, selectedScope as SettingScope); }, [onSelect, selectedScope]);
 
   const globalKeyMatchers = useKeyMatchers();
-  const settingsKeyMatchers = useMemo(
-    () => ({
-      ...globalKeyMatchers,
-      [Command.DIALOG_NAVIGATION_UP]: (key: Key) =>
-        KEY_UP.matches(key) || KEY_CTRL_P.matches(key),
-      [Command.DIALOG_NAVIGATION_DOWN]: (key: Key) =>
-        KEY_DOWN.matches(key) || KEY_CTRL_N.matches(key),
-    }),
-    [globalKeyMatchers],
-  );
+  const settingsKeyMatchers = useMemo(() => ({
+    ...globalKeyMatchers,
+    [Command.DIALOG_NAVIGATION_UP]: (key: Key) => KEY_UP.matches(key) || KEY_CTRL_P.matches(key),
+    [Command.DIALOG_NAVIGATION_DOWN]: (key: Key) => KEY_DOWN.matches(key) || KEY_CTRL_N.matches(key),
+  }), [globalKeyMatchers]);
 
-  // Custom key handler for restart key
   const handleKeyPress = useCallback(
-    (key: Key, _currentItem: SettingsDialogItem | undefined): boolean => {
-      // 'r' key for restart
+    (key: Key): boolean => {
       if (showRestartPrompt && key.sequence === 'r') {
         if (onRestartRequest) onRestartRequest();
         return true;
@@ -368,18 +319,14 @@ export function SettingsDialog({
     [showRestartPrompt, onRestartRequest],
   );
 
-  // Decisions on what features to enable
-  const hasWorkspace = settings.workspace.path !== undefined;
-  const showSearch = !showRestartPrompt;
-
   return (
     <BaseSettingsDialog
-      title="Settings"
+      title={hudLang === 'zh' ? '设置' : 'Settings'}
       borderColor={showRestartPrompt ? theme.status.warning : undefined}
-      searchEnabled={showSearch}
+      searchEnabled={!showRestartPrompt}
       searchBuffer={searchBuffer}
       items={items}
-      showScopeSelector={hasWorkspace}
+      showScopeSelector={settings.workspace.path !== undefined}
       selectedScope={selectedScope}
       onScopeChange={handleScopeChange}
       maxItemsToShow={MAX_ITEMS_TO_SHOW}
@@ -391,19 +338,14 @@ export function SettingsDialog({
       onClose={handleClose}
       onKeyPress={handleKeyPress}
       keyMatchers={settingsKeyMatchers}
-      footer={
-        showRestartPrompt
-          ? {
-              content: (
-                <Text color={theme.status.warning}>
-                  Changes that require a restart have been modified. Press r to
-                  exit and apply changes now.
-                </Text>
-              ),
-              height: 1,
-            }
-          : undefined
-      }
+      footer={showRestartPrompt ? {
+        content: (
+          <Text color={theme.status.warning}>
+            {hudLang === 'zh' ? '需要重启的设置已修改。按 r 退出并立即应用。' : 'Changes that require a restart have been modified. Press r to exit and apply changes now.'}
+          </Text>
+        ),
+        height: 1,
+      } : undefined}
     />
   );
 }

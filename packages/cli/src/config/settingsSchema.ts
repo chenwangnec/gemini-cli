@@ -129,6 +129,8 @@ export interface SettingDefinition {
    * Optional reference identifier for generators that emit a `$ref`.
    */
   ref?: string;
+  /** When true, UI may mask the value (e.g. API keys). */
+  secret?: boolean;
 }
 
 export interface SettingsSchema {
@@ -197,7 +199,8 @@ const SETTINGS_SCHEMA = {
         category: 'General',
         requiresRestart: true,
         default: 'en',
-        description: 'Global language setting for the application. Controls both UI and model output language if not overridden.',
+        description:
+          'Global language setting for the application. Controls both UI and model output language if not overridden.',
         showInDialog: true,
         options: [
           { value: 'en', label: 'English' },
@@ -752,7 +755,8 @@ const SETTINGS_SCHEMA = {
                 category: 'UI',
                 requiresRestart: true,
                 default: 'en',
-                description: 'The language for model reasoning (thoughts) and topic updates.',
+                description:
+                  'The language for model reasoning (thoughts) and topic updates.',
                 showInDialog: true,
                 options: [
                   { value: 'en', label: 'English' },

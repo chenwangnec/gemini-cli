@@ -15,6 +15,7 @@ import {
   ModelNotFoundError,
   type UserTierId,
   VALID_GEMINI_MODELS,
+  VALID_THIRD_PARTY_MODELS,
   isProModel,
   isOverageEligibleModel,
   getDisplayString,
@@ -135,7 +136,13 @@ export function useQuotaAndFallback({
         message = messageLines.join('\n');
       } else if (error instanceof ModelNotFoundError) {
         isModelNotFoundError = true;
-        if (VALID_GEMINI_MODELS.has(failedModel)) {
+        if (VALID_THIRD_PARTY_MODELS.has(failedModel)) {
+          const messageLines = [
+            `Could not use ${getDisplayString(failedModel)} with the configured provider.`,
+            `/model to pick a Gemini model.`,
+          ];
+          message = messageLines.join('\n');
+        } else if (VALID_GEMINI_MODELS.has(failedModel)) {
           const messageLines = [
             `It seems like you don't have access to ${getDisplayString(failedModel)}.`,
             `Your admin might have disabled the access. Contact them to enable the Preview Release Channel.`,

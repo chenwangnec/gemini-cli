@@ -164,29 +164,32 @@ export async function createContentGeneratorConfig(
     return contentGeneratorConfig;
   }
 
-  if (authType === AuthType.USE_GEMINI && geminiApiKey) {
-    contentGeneratorConfig.apiKey = geminiApiKey;
-    contentGeneratorConfig.vertexai = false;
-
-    return contentGeneratorConfig;
-  }
-
+  // If we are in Cloud Shell or on GCE, we don't need an API key
   if (
-    authType === AuthType.USE_VERTEX_AI &&
-    (googleApiKey || (googleCloudProject && googleCloudLocation))
+    authType === AuthType.LEGACY_CLOUD_SHELL ||
+    authType === AuthType.GATEWAY
   ) {
-    contentGeneratorConfig.apiKey = googleApiKey;
+    return contentGeneratorConfig;
+  }
+
+  // If we are using Vertex AI, we need a project and location
+  if (authType === AuthType.USE_VERTEX_AI) {
+    if (!googleCloudProject || !googleCloudLocation) {
+      throw new Error(
+        'Using Vertex AI requires GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION environment variables.',
+      );
+    }
     contentGeneratorConfig.vertexai = true;
-
     return contentGeneratorConfig;
   }
 
-  if (authType === AuthType.GATEWAY) {
-    contentGeneratorConfig.apiKey = apiKey || 'gateway-placeholder-key';
-    contentGeneratorConfig.vertexai = false;
-
-    return contentGeneratorConfig;
+  if (!geminiApiKey && !googleApiKey) {
+    throw new Error(
+      'No API key found. Please set the GEMINI_API_KEY environment variable or login using `gemini login`.',
+    );
   }
+
+  contentGeneratorConfig.apiKey = geminiApiKey || googleApiKey;
 
   return contentGeneratorConfig;
 }
@@ -194,15 +197,16 @@ export async function createContentGeneratorConfig(
 export async function createContentGenerator(
   config: ContentGeneratorConfig,
   gcConfig: Config,
-  sessionId?: string,
+  sessionId: string = '',
 ): Promise<ContentGenerator> {
-  const generator = await (async () => {
+  const innerGenerator = await (async () => {
     if (gcConfig.fakeResponses) {
       const fakeGenerator = await FakeContentGenerator.fromFile(
         gcConfig.fakeResponses,
       );
       return new LoggingContentGenerator(fakeGenerator, gcConfig);
     }
+
     const version = await getVersion();
     const model = resolveModel(
       gcConfig.getModel(),
@@ -348,14 +352,15 @@ export async function createContentGenerator(
       });
       return new LoggingContentGenerator(googleGenAI.models, gcConfig);
     }
-    throw new Error(
-      `Error creating contentGenerator: Unsupported authType: ${config.authType}`,
-    );
+    throw new Error(`Unsupported authentication type: ${config.authType}`);
   })();
 
   if (gcConfig.recordResponses) {
-    return new RecordingContentGenerator(generator, gcConfig.recordResponses);
+    return new RecordingContentGenerator(
+      innerGenerator,
+      gcConfig.recordResponses,
+    );
   }
 
-  return generator;
+  return innerGenerator;
 }

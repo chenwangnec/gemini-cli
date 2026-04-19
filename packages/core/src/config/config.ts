@@ -586,6 +586,12 @@ export interface WorktreeSettings {
   baseSha: string;
 }
 
+export interface ThirdPartyProviderSettings {
+  apiKey?: string;
+  openAiEndpoint?: string;
+  anthropicEndpoint?: string;
+}
+
 export interface ConfigParameters {
   sessionId: string;
   clientName?: string;
@@ -742,6 +748,7 @@ export interface ConfigParameters {
     overageStrategy?: OverageStrategy;
   };
   vertexAiRouting?: VertexAiRoutingConfig;
+  approvedPlanPath?: string;
 }
 
 export class Config implements McpContext, AgentLoopContext {
@@ -976,8 +983,8 @@ export class Config implements McpContext, AgentLoopContext {
   private remoteAdminSettings: AdminControlsSettings | undefined;
   private latestApiRequest: GenerateContentParameters | undefined;
   private lastModeSwitchTime: number = performance.now();
-  readonly injectionService: InjectionService;
   private approvedPlanPath: string | undefined;
+  readonly injectionService: InjectionService;
 
   constructor(params: ConfigParameters) {
     this._sessionId = params.sessionId;
@@ -1412,6 +1419,7 @@ export class Config implements McpContext, AgentLoopContext {
     this._geminiClient = new GeminiClient(this);
     this.a2aClientManager = new A2AClientManager(this);
     this.modelRouterService = new ModelRouterService(this);
+    this.approvedPlanPath = params.approvedPlanPath;
   }
 
   get config(): Config {
@@ -2895,6 +2903,10 @@ export class Config implements McpContext, AgentLoopContext {
     return this.proxy;
   }
 
+  getApprovedPlanPath(): string | undefined {
+    return this.approvedPlanPath;
+  }
+
   getWorkingDir(): string {
     return this.cwd;
   }
@@ -2985,10 +2997,6 @@ export class Config implements McpContext, AgentLoopContext {
 
   isTrackerEnabled(): boolean {
     return this.trackerEnabled;
-  }
-
-  getApprovedPlanPath(): string | undefined {
-    return this.approvedPlanPath;
   }
 
   getDirectWebFetch(): boolean {

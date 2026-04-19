@@ -16,6 +16,8 @@ import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { isNarrowWidth } from '../utils/isNarrowWidth.js';
 import { INTERACTIVE_SHELL_WAITING_PHRASE } from '../hooks/usePhraseCycler.js';
 
+import { useSettings } from '../contexts/SettingsContext.js';
+
 interface LoadingIndicatorProps {
   currentLoadingPhrase?: string;
   wittyPhrase?: string;
@@ -48,6 +50,7 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   isHookActive = false,
 }) => {
   const streamingState = useStreamingContext();
+  const settings = useSettings();
   const { columns: terminalWidth } = useTerminalSize();
   const isNarrow = isNarrowWidth(terminalWidth);
 
@@ -59,6 +62,10 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
     return null;
   }
 
+  // @ts-ignore
+  const hudLang = settings.merged.ui?.footer?.hud?.language || 'en';
+  const thinkingText = hudLang === 'zh' ? '正在思考...' : 'Thinking...';
+
   // Prioritize the interactive shell waiting phrase over the thought subject
   // because it conveys an actionable state for the user (waiting for input).
   const primaryText =
@@ -68,19 +75,19 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
         ? (thoughtLabel ?? thought.subject)
         : currentLoadingPhrase ||
           (streamingState === StreamingState.Responding
-            ? 'Thinking...'
+            ? thinkingText
             : undefined);
 
   const cancelAndTimerContent =
     showCancelAndTimer && streamingState === StreamingState.Responding
-      ? `(esc to cancel, ${elapsedTime < 60 ? `${elapsedTime}s` : formatDuration(elapsedTime * 1000)})`
+      ? `(${hudLang === 'zh' ? 'esc 取消' : 'esc to cancel'}, ${elapsedTime < 60 ? `${elapsedTime}s` : formatDuration(elapsedTime * 1000)})`
       : null;
 
   const wittyPhraseNode =
     !forceRealStatusOnly &&
     showWit &&
     wittyPhrase &&
-    primaryText === 'Thinking...' ? (
+    primaryText === thinkingText ? (
       <Box marginLeft={1}>
         <Text color={theme.text.secondary} dimColor italic>
           {wittyPhrase}

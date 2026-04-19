@@ -26,6 +26,7 @@ export interface FooterRowItem {
   flexGrow: number;
   flexShrink: number;
   alignItems: 'flex-start' | 'flex-end' | 'center';
+  isFocused?: boolean;
 }
 
 export const FooterRow: React.FC<{
@@ -177,8 +178,8 @@ export const Footer: React.FC = () => {
   // --- Configuration-driven Visibility & Language ---
   const ui = (settings as any).ui as UiSettings | undefined;
   const hudEnabled = ui?.footer?.hud?.enabled ?? true;
-  const hudLang = ui?.footer?.hud?.language || 'en';
-  const t = TRANSLATIONS[hudLang] || TRANSLATIONS.en;
+  const hudLang = ui?.footer?.hud?.language || 'zh';
+  const t = TRANSLATIONS[hudLang] || TRANSLATIONS['en'];
 
   const {
     model,
@@ -235,6 +236,7 @@ export const Footer: React.FC = () => {
       }, 100);
       return () => clearInterval(interval);
     }
+    return;
   }, [uiState.streamingState, uiState.pendingGeminiHistoryItems, hudEnabled, streamToks]);
 
   // --- Daily Calls Persistence ---
@@ -296,9 +298,7 @@ export const Footer: React.FC = () => {
   const memStr = `${Math.round((memUsage?.rss || 0) / 1024 / 1024)} MB`;
   const workspaceName = targetDir?.split(/[/\\]/).pop() || 'workspace';
   
-  const added = uiState?.sessionStats?.diff?.added || 0;
-  const removed = uiState?.sessionStats?.diff?.removed || 0;
-  const gitStr = branchName ? `git:(${branchName}* [+${added} -${removed}])` : '';
+  const gitStr = branchName ? `git:(${branchName}*)` : '';
   const numFiles = uiState?.contextFileNames?.length || 0;
   const reqCount = uiState.sessionStats.promptCount;
   const hitRate = hudPromptTokens > 0 ? ((hudCachedTokens / hudPromptTokens) * 100).toFixed(1) : '0.0';
@@ -311,7 +311,7 @@ export const Footer: React.FC = () => {
     <Box flexDirection="column" width={terminalWidth} paddingX={1}>
       {/* Line 1 */}
       <Box width="100%">
-        <Text wrap="none">
+        <Text wrap="truncate-end">
           <Text color="green" bold>[{modelDisplay}]</Text>
           <Text color={theme.ui.comment}> │ </Text>
           <Text color="white">{workspaceName} {gitStr}</Text>
@@ -326,7 +326,7 @@ export const Footer: React.FC = () => {
 
       {/* Line 2 */}
       <Box width="100%">
-        <Text wrap="none">
+        <Text wrap="truncate-end">
           <Text color="gray">{t.context} </Text><Text color={theme.ui.comment}>{contextProgressBar} </Text>
           <Text color="white">{contextUsagePercent}% ({fContext}/{contextLimitStr})</Text>
           <Text color={theme.ui.comment}> │ </Text>
@@ -342,7 +342,7 @@ export const Footer: React.FC = () => {
 
       {/* Line 3 */}
       <Box width="100%">
-        <Text wrap="none">
+        <Text wrap="truncate-end">
           <Text color="gray">{t.tokens} </Text>
           <Text color="white">{fTotal}</Text>
           <Text color="gray"> ({t.in}: </Text>

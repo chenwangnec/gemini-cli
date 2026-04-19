@@ -120,7 +120,7 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
       value: {
         key: 'show-labels',
         id: 'show-labels',
-        label: 'Show footer labels',
+        label: '显示底部标签名',
         type: 'labels-toggle',
       },
     });
@@ -130,7 +130,7 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
       value: {
         key: 'reset',
         id: 'reset',
-        label: 'Reset to default footer',
+        label: '重置为默认页脚',
         type: 'reset',
       },
     });
@@ -214,7 +214,7 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
     if (focusKey === 'reset') {
       return (
         <Text color={theme.ui.comment} italic>
-          Default footer (uses legacy settings)
+          默认页脚（使用旧版设置）
         </Text>
       );
     }
@@ -232,7 +232,7 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
     // Mock data for preview (headers come from ALL_ITEMS)
     const mockData: Record<string, React.ReactNode> = {
       workspace: (
-        <Text color={getColor('workspace', itemColor)}>~/project/path</Text>
+        <Text color={getColor('workspace', itemColor)}>~/项目路径</Text>
       ),
       'git-branch': <Text color={getColor('git-branch', itemColor)}>main</Text>,
       sandbox: <Text color={getColor('sandbox', 'green')}>docker</Text>,
@@ -240,9 +240,9 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
         <Text color={getColor('model-name', itemColor)}>gemini-2.5-pro</Text>
       ),
       'context-used': (
-        <Text color={getColor('context-used', itemColor)}>85% used</Text>
+        <Text color={getColor('context-used', itemColor)}>已使用 85%</Text>
       ),
-      quota: <Text color={getColor('quota', itemColor)}>42% used</Text>,
+      quota: <Text color={getColor('quota', itemColor)}>已使用 42%</Text>,
       'memory-usage': (
         <Text color={getColor('memory-usage', itemColor)}>260 MB</Text>
       ),
@@ -271,6 +271,8 @@ export const FooterConfigDialog: React.FC<FooterConfigDialogProps> = ({
         header: ALL_ITEMS.find((i) => i.id === id)?.header ?? id,
         element: mockData[id],
         flexGrow: 0,
+        flexShrink: 0,
+        alignItems: 'center',
         isFocused: id === focusKey,
       }));
 

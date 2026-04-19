@@ -7,11 +7,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { INFORMATIVE_TIPS } from '../constants/tips.js';
 import { WITTY_LOADING_PHRASES } from '../constants/wittyPhrases.js';
+import { useSettings } from '../contexts/SettingsContext.js';
 
 export const PHRASE_CHANGE_INTERVAL_MS = 10000;
 export const WITTY_PHRASE_CHANGE_INTERVAL_MS = 5000;
 export const INTERACTIVE_SHELL_WAITING_PHRASE =
   '! Shell awaiting input (Tab to focus)';
+export const INTERACTIVE_SHELL_WAITING_PHRASE_ZH =
+  '! 终端等待输入 (按 Tab 聚焦)';
 
 /**
  * Custom hook to manage cycling through loading phrases.
@@ -33,6 +36,10 @@ export const usePhraseCycler = (
   customPhrases?: string[],
   maxLength?: number,
 ) => {
+  const settings = useSettings();
+  // @ts-ignore
+  const hudLang = settings.merged.ui?.footer?.hud?.language || 'en';
+
   const [currentTipState, setCurrentTipState] = useState<string | undefined>(
     undefined,
   );
@@ -173,9 +180,13 @@ export const usePhraseCycler = (
   let currentWittyPhrase = undefined;
 
   if (shouldShowFocusHint) {
-    currentTip = INTERACTIVE_SHELL_WAITING_PHRASE;
+    currentTip =
+      hudLang === 'zh'
+        ? INTERACTIVE_SHELL_WAITING_PHRASE_ZH
+        : INTERACTIVE_SHELL_WAITING_PHRASE;
   } else if (isWaiting) {
-    currentTip = 'Waiting for user confirmation...';
+    currentTip =
+      hudLang === 'zh' ? '正在等待用户确认...' : 'Waiting for user confirmation...';
   } else if (isActive) {
     currentTip = currentTipState;
     currentWittyPhrase = currentWittyPhraseState;

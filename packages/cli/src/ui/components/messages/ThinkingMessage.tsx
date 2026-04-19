@@ -10,6 +10,7 @@ import { Box, Text } from 'ink';
 import type { ThoughtSummary } from '@google/gemini-cli-core';
 import { theme } from '../../semantic-colors.js';
 import { normalizeEscapedNewlines } from '../../utils/textUtils.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 
 interface ThinkingMessageProps {
   thought: ThoughtSummary;
@@ -54,18 +55,23 @@ export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
   terminalWidth,
   isFirstThinking,
 }) => {
+  const settings = useSettings();
   const fullLines = useMemo(() => normalizeThoughtLines(thought), [thought]);
 
   if (fullLines.length === 0) {
     return null;
   }
 
+  // @ts-ignore
+  const hudLang = settings.merged.ui?.footer?.hud?.language || 'en';
+  const thinkingText = hudLang === 'zh' ? '正在思考...' : 'Thinking...';
+
   return (
     <Box width={terminalWidth} flexDirection="column">
       {isFirstThinking && (
         <Text color={theme.text.primary} italic>
           {' '}
-          Thinking...{' '}
+          {thinkingText}{' '}
         </Text>
       )}
 

@@ -725,7 +725,7 @@ const SETTINGS_SCHEMA = {
                 label: 'HUD Language',
                 category: 'UI',
                 requiresRestart: false,
-                default: 'en',
+                default: 'zh',
                 description: 'The display language for the HUD.',
                 showInDialog: true,
                 options: [

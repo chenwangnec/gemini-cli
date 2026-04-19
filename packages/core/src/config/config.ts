@@ -731,6 +731,7 @@ export interface ConfigParameters {
   mcpEnabled?: boolean;
   extensionsEnabled?: boolean;
   agents?: AgentSettings;
+  language?: string;
   onReload?: () => Promise<{
     disabledSkills?: string[];
     adminSkillsEnabled?: boolean;
@@ -775,6 +776,7 @@ export class Config implements McpContext, AgentLoopContext {
   private readonly question: string | undefined;
   private readonly worktreeSettings: WorktreeSettings | undefined;
   readonly enableConseca: boolean;
+  private readonly language: string;
 
   private readonly coreTools: string[] | undefined;
   private readonly mainAgentTools: string[] | undefined;
@@ -1224,6 +1226,7 @@ export class Config implements McpContext, AgentLoopContext {
     };
     this.topicUpdateNarration = params.topicUpdateNarration ?? true;
     this.modelSteering = params.modelSteering ?? false;
+    this.language = params.language ?? 'en';
     this.injectionService = new InjectionService(() =>
       this.isModelSteeringEnabled(),
     );
@@ -1792,6 +1795,10 @@ export class Config implements McpContext, AgentLoopContext {
 
   getWorktreeSettings(): WorktreeSettings | undefined {
     return this.worktreeSettings;
+  }
+
+  getLanguage(): string {
+    return this.language;
   }
 
   getClientName(): string | undefined {

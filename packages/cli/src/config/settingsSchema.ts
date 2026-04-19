@@ -191,6 +191,19 @@ const SETTINGS_SCHEMA = {
     description: 'General application settings.',
     showInDialog: false,
     properties: {
+      language: {
+        type: 'enum',
+        label: 'Global Language',
+        category: 'General',
+        requiresRestart: true,
+        default: 'en',
+        description: 'Global language setting for the application. Controls both UI and model output language if not overridden.',
+        showInDialog: true,
+        options: [
+          { value: 'en', label: 'English' },
+          { value: 'zh', label: '简体中文' },
+        ],
+      },
       preferredEditor: {
         type: 'string',
         label: 'Preferred Editor',
@@ -727,6 +740,19 @@ const SETTINGS_SCHEMA = {
                 requiresRestart: false,
                 default: 'zh',
                 description: 'The display language for the HUD.',
+                showInDialog: true,
+                options: [
+                  { value: 'en', label: 'English' },
+                  { value: 'zh', label: '简体中文' },
+                ],
+              },
+              outputLanguage: {
+                type: 'enum',
+                label: 'Model Output Language',
+                category: 'UI',
+                requiresRestart: true,
+                default: 'en',
+                description: 'The language for model reasoning (thoughts) and topic updates.',
                 showInDialog: true,
                 options: [
                   { value: 'en', label: 'English' },

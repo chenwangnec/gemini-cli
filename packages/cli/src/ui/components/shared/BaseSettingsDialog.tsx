@@ -277,7 +277,7 @@ export function BaseSettingsDialog({
 
   useKeypress(
     (key: Key) => {
-      if (!editingKey && onKeyPress?.(key, currentItem)) return;
+      if (!editingKey && onKeyPress?.(key, currentItem)) return true;
 
       if (editingKey) {
         const item = items.find((i) => i.key === editingKey);
@@ -285,45 +285,45 @@ export function BaseSettingsDialog({
 
         if (keyMatchers[Command.MOVE_LEFT](key)) {
           editDispatch({ type: 'MOVE_LEFT' });
-          return;
+          return true;
         }
         if (keyMatchers[Command.MOVE_RIGHT](key)) {
           editDispatch({ type: 'MOVE_RIGHT' });
-          return;
+          return true;
         }
         if (keyMatchers[Command.HOME](key)) {
           editDispatch({ type: 'HOME' });
-          return;
+          return true;
         }
         if (keyMatchers[Command.END](key)) {
           editDispatch({ type: 'END' });
-          return;
+          return true;
         }
         if (keyMatchers[Command.DELETE_CHAR_LEFT](key)) {
           editDispatch({ type: 'DELETE_LEFT' });
-          return;
+          return true;
         }
         if (keyMatchers[Command.DELETE_CHAR_RIGHT](key)) {
           editDispatch({ type: 'DELETE_RIGHT' });
-          return;
+          return true;
         }
         if (keyMatchers[Command.ESCAPE](key)) {
           commitEdit();
-          return;
+          return true;
         }
         if (keyMatchers[Command.RETURN](key)) {
           commitEdit();
-          return;
+          return true;
         }
         if (keyMatchers[Command.DIALOG_NAVIGATION_UP](key) && !key.insertable) {
           commitEdit();
           moveUp();
-          return;
+          return true;
         }
         if (keyMatchers[Command.DIALOG_NAVIGATION_DOWN](key) && !key.insertable) {
           commitEdit();
           moveDown();
-          return;
+          return true;
         }
         if (key.sequence) {
           editDispatch({
@@ -332,7 +332,7 @@ export function BaseSettingsDialog({
             isNumberType: type === 'number',
           });
         }
-        return;
+        return true;
       }
 
       if (effectiveFocusSection === 'settings') {
@@ -366,13 +366,15 @@ export function BaseSettingsDialog({
 
       if (key.name === 'tab' && finalShowScopeSelector) {
         setFocusSection((s) => (s === 'settings' ? 'scope' : 'settings'));
-        return;
+        return true;
       }
 
       if (keyMatchers[Command.ESCAPE](key)) {
         onClose();
-        return;
+        return true;
       }
+
+      return false;
     },
     { isActive: true, priority: effectiveFocusSection === 'settings' },
   );

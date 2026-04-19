@@ -933,7 +933,10 @@ export async function loadCliConfig(
     debugMode,
     question,
     worktreeSettings,
-
+    language:
+      settings.general?.language ||
+      settings.ui?.footer?.hud?.outputLanguage ||
+      'en',
     coreTools: settings.tools?.core || undefined,
     allowedTools: allowedTools.length > 0 ? allowedTools : undefined,
     policyEngineConfig,

@@ -36,7 +36,6 @@ import {
   type SettingsValue,
   TOGGLE_TYPES,
 } from '../../config/settingsSchema.js';
-import { debugLogger } from '@google/gemini-cli-core';
 
 import { useSearchBuffer } from '../hooks/useSearchBuffer.js';
 import {
@@ -69,6 +68,11 @@ const KEY_CTRL_N = new KeyBinding('ctrl+n');
 
 // --- Detailed Settings Translations ---
 const SETTINGS_ZH: Record<string, { label: string; description?: string; options?: Record<string | number, string> }> = {
+  'general.language': {
+    label: '全局语言',
+    description: '应用程序的全局语言设置。如果未单独指定，将同时控制界面和模型输出语言。',
+    options: { 'en': 'English', 'zh': '简体中文' }
+  },
   'general.vimMode': { label: 'Vim 模式', description: '启用 Vim 快捷键绑定' },
   'general.defaultApprovalMode': { 
     label: '默认审批模式', 
@@ -79,7 +83,12 @@ const SETTINGS_ZH: Record<string, { label: string; description?: string; options
   'ui.footer.hud.enabled': { label: '开启 HUD 仪表盘', description: '启用多行实时监控状态栏' },
   'ui.footer.hud.language': { 
     label: '界面语言', 
-    description: '设置 HUD 和系统文本语言',
+    description: '设置 HUD 和系统文本语言。如果未设置，将遵循“全局语言”。',
+    options: { 'en': 'English', 'zh': '简体中文' }
+  },
+  'ui.footer.hud.outputLanguage': { 
+    label: '模型回复语言', 
+    description: '设置模型思考过程和主题更新使用的语言。如果未设置，将遵循“全局语言”。例如：“审查编译步骤：项目编译顺利完成。”',
     options: { 'en': 'English', 'zh': '简体中文' }
   },
   'ui.footer.hideCWD': { label: '隐藏工作路径', description: '在页脚隐藏当前目录路径' },

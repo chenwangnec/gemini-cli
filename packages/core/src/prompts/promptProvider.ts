@@ -139,9 +139,13 @@ export class PromptProvider {
           !!userMemory.extension?.trim() ||
           !!userMemory.project?.trim());
 
+      const language = context.config.getLanguage();
+
       const options: snippets.SystemPromptOptions = {
+        language,
         preamble: this.withSection('preamble', () => ({
           interactive: interactiveMode,
+          language,
         })),
         coreMandates: this.withSection('coreMandates', () => ({
           interactive: interactiveMode,
@@ -149,6 +153,7 @@ export class PromptProvider {
           hasHierarchicalMemory,
           contextFilenames,
           topicUpdateNarration: isTopicUpdateNarrationEnabled,
+          language,
         })),
         subAgents: this.withSection(
           'agentContexts',
@@ -194,6 +199,7 @@ export class PromptProvider {
                 : undefined,
               taskTracker: trackerDir,
               topicUpdateNarration: isTopicUpdateNarrationEnabled,
+              language,
             };
           },
           !isPlanMode,
@@ -216,6 +222,7 @@ export class PromptProvider {
                   ).replaceAll('\\', '/')
                 : undefined;
             })(),
+            language,
           }),
           isPlanMode,
         ),
@@ -234,6 +241,7 @@ export class PromptProvider {
             globalMemoryPath: context.config.isMemoryV2Enabled()
               ? getGlobalMemoryFilePath()
               : undefined,
+            language,
           }),
         ),
         sandbox: this.withSection('sandbox', () => ({

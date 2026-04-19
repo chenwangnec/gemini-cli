@@ -5,527 +5,357 @@
  */
 
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { theme } from '../semantic-colors.js';
 import {
-  shortenPath,
-  tildeifyPath,
   getDisplayString,
-  checkExhaustive,
-  AuthType,
-  UserAccountManager,
 } from '@google/gemini-cli-core';
-import { ConsoleSummaryDisplay } from './ConsoleSummaryDisplay.js';
 import process from 'node:process';
-import { MemoryUsageDisplay } from './MemoryUsageDisplay.js';
-import { ContextUsageDisplay } from './ContextUsageDisplay.js';
-import { QuotaDisplay } from './QuotaDisplay.js';
-import { DebugProfiler } from './DebugProfiler.js';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import { useUIState } from '../contexts/UIStateContext.js';
-import { useQuotaState } from '../contexts/QuotaContext.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { useSettings } from '../contexts/SettingsContext.js';
-import { useVimMode } from '../contexts/VimModeContext.js';
-import { useInputState } from '../contexts/InputContext.js';
-import {
-  ALL_ITEMS,
-  type FooterItemId,
-  deriveItemsFromLegacySettings,
-} from '../../config/footerItems.js';
-import { isDevelopment } from '../../utils/installationInfo.js';
-
-interface CwdIndicatorProps {
-  targetDir: string;
-  maxWidth: number;
-  debugMode?: boolean;
-  debugMessage?: string;
-  color?: string;
-}
-
-const CwdIndicator: React.FC<CwdIndicatorProps> = ({
-  targetDir,
-  maxWidth,
-  debugMode,
-  debugMessage,
-  color = theme.text.primary,
-}) => {
-  const debugSuffix = debugMode ? ' ' + (debugMessage || '--debug') : '';
-  const availableForPath = Math.max(10, maxWidth - debugSuffix.length);
-  const displayPath = shortenPath(tildeifyPath(targetDir), availableForPath);
-
-  return (
-    <Text color={color}>
-      {displayPath}
-      {debugMode && <Text color={theme.status.error}>{debugSuffix}</Text>}
-    </Text>
-  );
-};
-
-interface SandboxIndicatorProps {
-  isTrustedFolder: boolean | undefined;
-}
-
-const SandboxIndicator: React.FC<SandboxIndicatorProps> = ({
-  isTrustedFolder,
-}) => {
-  const config = useConfig();
-  const sandboxEnabled = config.getSandboxEnabled();
-  if (isTrustedFolder === false) {
-    return <Text color={theme.status.warning}>untrusted</Text>;
-  }
-
-  const sandbox = process.env['SANDBOX'];
-  if (sandbox) {
-    return <Text color={theme.status.warning}>current process</Text>;
-  }
-
-  if (sandboxEnabled) {
-    return <Text color={theme.status.warning}>all tools</Text>;
-  }
-
-  return <Text color={theme.status.error}>no sandbox</Text>;
-};
-
-const CorgiIndicator: React.FC = () => (
-  <Text>
-    <Text color={theme.status.error}>▼</Text>
-    <Text color={theme.text.primary}>(´</Text>
-    <Text color={theme.status.error}>ᴥ</Text>
-    <Text color={theme.text.primary}>`)</Text>
-    <Text color={theme.status.error}>▼</Text>
-  </Text>
-);
 
 export interface FooterRowItem {
   key: string;
   header: string;
   element: React.ReactNode;
-  flexGrow?: number;
-  flexShrink?: number;
-  isFocused?: boolean;
-  alignItems?: 'flex-start' | 'center' | 'flex-end';
+  flexGrow: number;
+  flexShrink: number;
+  alignItems: 'flex-start' | 'flex-end' | 'center';
 }
-
-const COLUMN_GAP = 3;
 
 export const FooterRow: React.FC<{
   items: FooterRowItem[];
   showLabels: boolean;
 }> = ({ items, showLabels }) => {
-  const elements: React.ReactNode[] = [];
-
-  items.forEach((item, idx) => {
-    if (idx > 0) {
-      elements.push(
-        <Box
-          key={`sep-${item.key}`}
-          flexGrow={1}
-          flexShrink={1}
-          minWidth={showLabels ? COLUMN_GAP : 3}
-          justifyContent="center"
-          alignItems="center"
-        >
-          {!showLabels && <Text color={theme.ui.comment}> · </Text>}
-        </Box>,
-      );
-    }
-
-    elements.push(
-      <Box
-        key={item.key}
-        flexDirection="column"
-        flexGrow={item.flexGrow ?? 0}
-        flexShrink={item.flexShrink ?? 1}
-        alignItems={item.alignItems}
-        backgroundColor={item.isFocused ? theme.background.focus : undefined}
-      >
-        {showLabels && (
-          <Box height={1}>
-            <Text
-              color={item.isFocused ? theme.text.primary : theme.ui.comment}
-            >
-              {item.header}
-            </Text>
-          </Box>
-        )}
-        <Box height={1}>{item.element}</Box>
-      </Box>,
-    );
-  });
-
   return (
-    <Box flexDirection="row" flexWrap="nowrap" width="100%">
-      {elements}
+    <Box flexWrap="nowrap" width="100%">
+      {items.map((item, index) => (
+        <Box
+          key={item.key}
+          flexGrow={item.flexGrow}
+          flexShrink={item.flexShrink}
+          alignItems={item.alignItems}
+          marginRight={index < items.length - 1 ? 2 : 0}
+        >
+          {showLabels && item.header && (
+            <Text color={theme.ui.comment}>{item.header}: </Text>
+          )}
+          {item.element}
+        </Box>
+      ))}
     </Box>
   );
 };
 
-function isFooterItemId(id: string): id is FooterItemId {
-  return ALL_ITEMS.some((i) => i.id === id);
+// --- Persistence Helper ---
+const STATS_DIR = path.join(os.homedir(), '.gemini');
+const STATS_FILE = path.join(STATS_DIR, 'daily_hud_stats.json');
+
+interface DailyStatsData {
+  date: string;
+  calls: number;
 }
 
-interface FooterColumn {
-  id: string;
-  header: string;
-  element: (maxWidth: number) => React.ReactNode;
-  width: number;
-  isHighPriority: boolean;
+const getDailyStats = (): number => {
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      const content = fs.readFileSync(STATS_FILE, 'utf-8');
+      const data = JSON.parse(content) as DailyStatsData;
+      const today = new Date().toISOString().split('T')[0];
+      if (data.date === today) return data.calls || 0;
+    }
+  } catch {
+    // Ignore error
+  }
+  return 0;
+};
+
+const saveDailyStats = (count: number) => {
+  try {
+    if (!fs.existsSync(STATS_DIR)) fs.mkdirSync(STATS_DIR, { recursive: true });
+    const today = new Date().toISOString().split('T')[0];
+    fs.writeFileSync(STATS_FILE, JSON.stringify({ date: today, calls: count }));
+  } catch {
+    // Ignore error
+  }
+};
+
+interface TranslationSet {
+  output: string;
+  cost: string;
+  context: string;
+  memory: string;
+  calls: string;
+  today: string;
+  files: string;
+  tokens: string;
+  in: string;
+  out: string;
+  cache: string;
+  hitRate: string;
+  units: string;
+}
+
+// --- Translations ---
+const TRANSLATIONS: Record<string, TranslationSet> = {
+  en: {
+    output: 'Output',
+    cost: 'Cost',
+    context: 'Context',
+    memory: 'Mem',
+    calls: 'Calls',
+    today: 'today',
+    files: 'files',
+    tokens: 'Tokens',
+    in: 'in',
+    out: 'out',
+    cache: 'cache',
+    hitRate: 'hit rate',
+    units: '',
+  },
+  zh: {
+    output: '输出',
+    cost: '费用',
+    context: '上下文',
+    memory: '内存',
+    calls: '调用',
+    today: '今日',
+    files: '文件',
+    tokens: 'Tokens',
+    in: '进',
+    out: '出',
+    cache: '缓存',
+    hitRate: '命中率',
+    units: '次',
+  }
+};
+
+// --- Model Context Limits ---
+const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  'gemini-3.1-pro': 2000000,
+  'gemini-3-pro': 2000000,
+  'gemini-2.5-pro': 2000000,
+  'gemini-3.1-flash': 1000000,
+  'gemini-3-flash': 1000000,
+  'gemini-2.5-flash': 1000000,
+  'gemini-2.5-flash-lite': 1000000,
+  'gemini-3.1-flash-lite': 1000000,
+  'pro': 2000000,
+  'flash': 1000000,
+  'flash-lite': 1000000,
+};
+
+const getContextLimit = (modelId: string) => {
+  const lowerId = modelId.toLowerCase();
+  for (const [key, limit] of Object.entries(MODEL_CONTEXT_LIMITS)) {
+    if (lowerId.includes(key)) return limit;
+  }
+  return 1000000; // Default fallback
+};
+
+interface HudSettings {
+  enabled?: boolean;
+  language?: string;
+}
+
+interface UiSettings {
+  footer?: {
+    hud?: HudSettings;
+  };
 }
 
 export const Footer: React.FC = () => {
   const uiState = useUIState();
-  const quotaState = useQuotaState();
-  const { copyModeEnabled } = useInputState();
   const config = useConfig();
   const settings = useSettings();
-  const { vimEnabled, vimMode } = useVimMode();
 
-  const authType = config.getContentGeneratorConfig()?.authType;
-  const [email, setEmail] = useState<string | undefined>();
-
-  useEffect(() => {
-    if (authType) {
-      const userAccountManager = new UserAccountManager();
-      setEmail(userAccountManager.getCachedGoogleAccount() ?? undefined);
-    } else {
-      setEmail(undefined);
-    }
-  }, [authType]);
+  // --- Configuration-driven Visibility & Language ---
+  const ui = (settings as any).ui as UiSettings | undefined;
+  const hudEnabled = ui?.footer?.hud?.enabled ?? true;
+  const hudLang = ui?.footer?.hud?.language || 'en';
+  const t = TRANSLATIONS[hudLang] || TRANSLATIONS.en;
 
   const {
     model,
     targetDir,
-    debugMode,
     branchName,
-    debugMessage,
-    corgiMode,
-    errorCount,
-    showErrorDetails,
     promptTokenCount,
-    isTrustedFolder,
     terminalWidth,
   } = {
     model: uiState.currentModel,
     targetDir: config.getTargetDir(),
-    debugMode: config.getDebugMode(),
     branchName: uiState.branchName,
-    debugMessage: uiState.debugMessage,
-    corgiMode: uiState.corgiMode,
-    errorCount: uiState.errorCount,
-    showErrorDetails: uiState.showErrorDetails,
     promptTokenCount: uiState.sessionStats.lastPromptTokenCount,
-    isTrustedFolder: uiState.isTrustedFolder,
     terminalWidth: uiState.terminalWidth,
   };
 
-  const quotaStats = quotaState.stats;
+  // --- Real-time Speed (tok/s) Logic ---
+  const [streamToks, setStreamToks] = useState('--');
+  const [stickyToks, setStickyToks] = useState('--');
+  const lastRespondingRef = useRef(false);
+  const startTimeRef = useRef(0);
+  const hasFirstCharRef = useRef(false);
+  const stickyTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const isFullErrorVerbosity = settings.merged.ui.errorVerbosity === 'full';
-  const showErrorSummary =
-    !showErrorDetails &&
-    errorCount > 0 &&
-    (isFullErrorVerbosity || debugMode || isDevelopment);
-  const displayVimMode = vimEnabled ? vimMode : undefined;
-
-  const items =
-    settings.merged.ui.footer.items ??
-    deriveItemsFromLegacySettings(settings.merged);
-  const showLabels = settings.merged.ui.footer.showLabels !== false;
-  const itemColor = showLabels ? theme.text.primary : theme.ui.comment;
-
-  const potentialColumns: FooterColumn[] = [];
-
-  const addCol = (
-    id: string,
-    header: string,
-    element: (maxWidth: number) => React.ReactNode,
-    dataWidth: number,
-    isHighPriority = false,
-  ) => {
-    potentialColumns.push({
-      id,
-      header: showLabels ? header : '',
-      element,
-      width: Math.max(dataWidth, showLabels ? header.length : 0),
-      isHighPriority,
-    });
-  };
-
-  // 1. System Indicators (Far Left, high priority)
-  if (uiState.showDebugProfiler) {
-    addCol('debug', '', () => <DebugProfiler />, 45, true);
-  }
-  if (displayVimMode) {
-    const vimStr = `[${displayVimMode}]`;
-    addCol(
-      'vim',
-      '',
-      () => <Text color={theme.text.accent}>{vimStr}</Text>,
-      vimStr.length,
-      true,
-    );
-  }
-
-  // 2. Main Configurable Items
-  for (const id of items) {
-    if (!isFooterItemId(id)) continue;
-    const itemConfig = ALL_ITEMS.find((i) => i.id === id);
-    const header = itemConfig?.header ?? id;
-
-    switch (id) {
-      case 'workspace': {
-        const fullPath = tildeifyPath(targetDir);
-        const debugSuffix = debugMode ? ' ' + (debugMessage || '--debug') : '';
-        addCol(
-          id,
-          header,
-          (maxWidth) => (
-            <CwdIndicator
-              targetDir={targetDir}
-              maxWidth={maxWidth}
-              debugMode={debugMode}
-              debugMessage={debugMessage}
-              color={itemColor}
-            />
-          ),
-          fullPath.length + debugSuffix.length,
-        );
-        break;
-      }
-      case 'git-branch': {
-        if (branchName) {
-          addCol(
-            id,
-            header,
-            () => <Text color={itemColor}>{branchName}</Text>,
-            branchName.length,
-          );
-        }
-        break;
-      }
-      case 'sandbox': {
-        let str = 'no sandbox';
-        const sandbox = process.env['SANDBOX'];
-        if (isTrustedFolder === false) str = 'untrusted';
-        else if (sandbox) str = 'current process';
-        else if (config.getSandboxEnabled()) str = 'all tools';
-
-        addCol(
-          id,
-          header,
-          () => <SandboxIndicator isTrustedFolder={isTrustedFolder} />,
-          str.length,
-        );
-        break;
-      }
-      case 'model-name': {
-        const str = getDisplayString(model);
-        addCol(
-          id,
-          header,
-          () => <Text color={itemColor}>{str}</Text>,
-          str.length,
-        );
-        break;
-      }
-      case 'context-used': {
-        addCol(
-          id,
-          header,
-          () => (
-            <ContextUsageDisplay
-              promptTokenCount={promptTokenCount}
-              model={model}
-              terminalWidth={terminalWidth}
-            />
-          ),
-          10, // "100% used" is 9 chars
-        );
-        break;
-      }
-      case 'quota': {
-        if (quotaStats?.remaining !== undefined && quotaStats.limit) {
-          addCol(
-            id,
-            header,
-            () => (
-              <QuotaDisplay
-                remaining={quotaStats.remaining}
-                limit={quotaStats.limit}
-                forceShow={true}
-                lowercase={true}
-              />
-            ),
-            9, // "100% used" is 9 chars
-          );
-        }
-        break;
-      }
-      case 'memory-usage': {
-        addCol(
-          id,
-          header,
-          () => (
-            <MemoryUsageDisplay color={itemColor} isActive={!copyModeEnabled} />
-          ),
-          10,
-        );
-        break;
-      }
-      case 'session-id': {
-        addCol(
-          id,
-          header,
-          () => (
-            <Text color={itemColor}>
-              {uiState.sessionStats.sessionId.slice(0, 8)}
-            </Text>
-          ),
-          8,
-        );
-        break;
-      }
-      case 'auth': {
-        if (!settings.merged.ui.showUserIdentity) break;
-        if (!authType) break;
-        const displayStr =
-          authType === AuthType.LOGIN_WITH_GOOGLE
-            ? (email ?? 'google')
-            : authType;
-        addCol(
-          id,
-          header,
-          () => (
-            <Text color={itemColor} wrap="truncate-end">
-              {displayStr}
-            </Text>
-          ),
-          displayStr.length,
-        );
-        break;
-      }
-      case 'code-changes': {
-        const added = uiState.sessionStats.metrics.files.totalLinesAdded;
-        const removed = uiState.sessionStats.metrics.files.totalLinesRemoved;
-        if (added > 0 || removed > 0) {
-          const str = `+${added} -${removed}`;
-          addCol(
-            id,
-            header,
-            () => (
-              <Text>
-                <Text color={theme.status.success}>+{added}</Text>{' '}
-                <Text color={theme.status.error}>-{removed}</Text>
-              </Text>
-            ),
-            str.length,
-          );
-        }
-        break;
-      }
-      case 'token-count': {
-        let total = 0;
-        for (const m of Object.values(uiState.sessionStats.metrics.models))
-          total += m.tokens.total;
-        if (total > 0) {
-          const formatter = new Intl.NumberFormat('en-US', {
-            notation: 'compact',
-            maximumFractionDigits: 1,
-          });
-          const formatted = formatter.format(total).toLowerCase();
-          addCol(
-            id,
-            header,
-            () => <Text color={itemColor}>{formatted} tokens</Text>,
-            formatted.length + 7,
-          );
-        }
-        break;
-      }
-      default:
-        checkExhaustive(id);
-        break;
+  useEffect(() => {
+    if (!hudEnabled) return;
+    const isResponding = uiState.streamingState === 'responding';
+    const pendingText = uiState.pendingGeminiHistoryItems.map(i => i.text).join('');
+    
+    if (isResponding && !lastRespondingRef.current) {
+      lastRespondingRef.current = true;
+      hasFirstCharRef.current = false;
+      if (stickyTimerRef.current) clearTimeout(stickyTimerRef.current);
+    } else if (isResponding && !hasFirstCharRef.current && pendingText.length > 0) {
+      startTimeRef.current = Date.now();
+      hasFirstCharRef.current = true;
+    } else if (!isResponding && lastRespondingRef.current) {
+      lastRespondingRef.current = false;
+      setStickyToks(prev => prev !== '--' ? prev : streamToks);
+      stickyTimerRef.current = setTimeout(() => {
+        setStickyToks('--');
+        setStreamToks('--');
+      }, 5000);
     }
-  }
 
-  // 3. Transients
-  if (corgiMode) addCol('corgi', '', () => <CorgiIndicator />, 5);
-  if (showErrorSummary) {
-    addCol(
-      'error-count',
-      '',
-      () => <ConsoleSummaryDisplay errorCount={errorCount} />,
-      12,
-      true,
-    );
-  }
-
-  // --- Width Fitting Logic ---
-  const columnsToRender: FooterColumn[] = [];
-  let droppedAny = false;
-  let currentUsedWidth = 2; // Initial padding
-
-  for (const col of potentialColumns) {
-    const gap = columnsToRender.length > 0 ? (showLabels ? COLUMN_GAP : 3) : 0;
-    const budgetWidth = col.id === 'workspace' ? 20 : col.width;
-
-    if (
-      col.isHighPriority ||
-      currentUsedWidth + gap + budgetWidth <= terminalWidth - 2
-    ) {
-      columnsToRender.push(col);
-      currentUsedWidth += gap + budgetWidth;
-    } else {
-      droppedAny = true;
+    if (isResponding && hasFirstCharRef.current) {
+      const interval = setInterval(() => {
+        const elapsed = (Date.now() - startTimeRef.current) / 1000;
+        const estimatedTokens = Math.floor(pendingText.length / 1.1); 
+        if (elapsed > 0.05 && estimatedTokens > 0) {
+          const speed = (estimatedTokens / elapsed).toFixed(1);
+          setStreamToks(speed);
+          setStickyToks(speed);
+        }
+      }, 100);
+      return () => clearInterval(interval);
     }
-  }
+  }, [uiState.streamingState, uiState.pendingGeminiHistoryItems, hudEnabled, streamToks]);
 
-  const rowItems: FooterRowItem[] = columnsToRender.map((col, index) => {
-    const isWorkspace = col.id === 'workspace';
-    const isLast = index === columnsToRender.length - 1;
+  // --- Daily Calls Persistence ---
+  const [dailyCalls, setDailyCalls] = useState(() => getDailyStats());
+  const lastTurnIdRef = useRef(0);
 
-    // Calculate exact space available for growth to prevent over-estimation truncation
-    const otherItemsWidth = columnsToRender
-      .filter((c) => c.id !== 'workspace')
-      .reduce((sum, c) => sum + c.width, 0);
-    const numItems = columnsToRender.length + (droppedAny ? 1 : 0);
-    const numGaps = numItems > 1 ? numItems - 1 : 0;
-    const gapsWidth = numGaps * (showLabels ? COLUMN_GAP : 3);
-    const ellipsisWidth = droppedAny ? 1 : 0;
+  useEffect(() => {
+    if (!hudEnabled) return;
+    const currentCount = uiState.sessionStats.promptCount;
+    if (uiState.streamingState === 'responding' && lastTurnIdRef.current !== currentCount) {
+      setDailyCalls(prev => {
+        const newVal = prev + 1;
+        saveDailyStats(newVal);
+        return newVal;
+      });
+      lastTurnIdRef.current = currentCount;
+    }
+  }, [uiState.streamingState, uiState.sessionStats.promptCount, hudEnabled]);
 
-    const availableForWorkspace = Math.max(
-      20,
-      terminalWidth - 2 - gapsWidth - otherItemsWidth - ellipsisWidth,
+  // If HUD is disabled, fallback
+  if (!hudEnabled) {
+    return (
+      <Box paddingX={1} width={terminalWidth}>
+        <Text color={theme.ui.comment}>Gemini CLI Footer (HUD Disabled)</Text>
+      </Box>
     );
-
-    const estimatedWidth = isWorkspace ? availableForWorkspace : col.width;
-
-    return {
-      key: col.id,
-      header: col.header,
-      element: col.element(estimatedWidth),
-      flexGrow: 0,
-      flexShrink: isWorkspace ? 1 : 0,
-      alignItems:
-        isLast && !droppedAny && index > 0 ? 'flex-end' : 'flex-start',
-    };
-  });
-
-  if (droppedAny) {
-    rowItems.push({
-      key: 'ellipsis',
-      header: '',
-      element: <Text color={theme.ui.comment}>…</Text>,
-      flexGrow: 0,
-      flexShrink: 0,
-      alignItems: 'flex-end',
-    });
   }
+
+  // --- Dynamic Context Logic ---
+  const activeModel = config.getActiveModel();
+  const contextLimit = getContextLimit(activeModel);
+  const contextUsagePercent = Math.min(100, Math.round(((promptTokenCount || 0) / contextLimit) * 100));
+  const progressChars = 5;
+  const filledChars = Math.round((contextUsagePercent / 100) * progressChars);
+  const contextProgressBar = '█'.repeat(filledChars) + '░'.repeat(progressChars - filledChars);
+  const contextLimitStr = contextLimit >= 1000000 ? `${(contextLimit / 1000000).toFixed(1)}M` : `${Math.round(contextLimit / 1000)}k`;
+
+  // --- UI Calculations ---
+  const sessionModels = uiState?.sessionStats?.metrics?.models || {};
+  let hudPromptTokens = 0;
+  let hudCandidatesTokens = 0;
+  let hudCachedTokens = 0;
+  for (const m of Object.values(sessionModels)) {
+    hudPromptTokens += m?.tokens?.prompt || 0;
+    hudCandidatesTokens += m?.tokens?.candidates || 0;
+    hudCachedTokens += m?.tokens?.cached || 0;
+  }
+  const hudTotalTokens = hudPromptTokens + hudCandidatesTokens;
+  const hudTotalCost = (hudPromptTokens / 1000000) * 1.25 + (hudCandidatesTokens / 1000000) * 3.75;
+  
+  const formatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+  const fTotal = formatter.format(hudTotalTokens).toLowerCase();
+  const fIn = formatter.format(hudPromptTokens).toLowerCase();
+  const fOut = formatter.format(hudCandidatesTokens).toLowerCase();
+  const fCache = formatter.format(hudCachedTokens).toLowerCase();
+  const fContext = formatter.format(promptTokenCount || 0).toLowerCase();
+
+  const memUsage = process.memoryUsage();
+  const memStr = `${Math.round((memUsage?.rss || 0) / 1024 / 1024)} MB`;
+  const workspaceName = targetDir?.split(/[/\\]/).pop() || 'workspace';
+  
+  const added = uiState?.sessionStats?.diff?.added || 0;
+  const removed = uiState?.sessionStats?.diff?.removed || 0;
+  const gitStr = branchName ? `git:(${branchName}* [+${added} -${removed}])` : '';
+  const numFiles = uiState?.contextFileNames?.length || 0;
+  const reqCount = uiState.sessionStats.promptCount;
+  const hitRate = hudPromptTokens > 0 ? ((hudCachedTokens / hudPromptTokens) * 100).toFixed(1) : '0.0';
+  
+  const modelDisplay = activeModel.includes(model.replace('auto-', '')) 
+    ? getDisplayString(activeModel, config)
+    : `${getDisplayString(model, config)} ➜ ${getDisplayString(activeModel, config)}`;
 
   return (
-    <Box width={terminalWidth} paddingX={1} overflow="hidden" flexWrap="nowrap">
-      <FooterRow items={rowItems} showLabels={showLabels} />
+    <Box flexDirection="column" width={terminalWidth} paddingX={1}>
+      {/* Line 1 */}
+      <Box width="100%">
+        <Text wrap="none">
+          <Text color="green" bold>[{modelDisplay}]</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="white">{workspaceName} {gitStr}</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="gray">{t.output}: </Text><Text color="white">{stickyToks} tok/s</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="white">⏱️  &lt;1m</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="magenta">{t.cost} ${hudTotalCost.toFixed(4)}</Text>
+        </Text>
+      </Box>
+
+      {/* Line 2 */}
+      <Box width="100%">
+        <Text wrap="none">
+          <Text color="gray">{t.context} </Text><Text color={theme.ui.comment}>{contextProgressBar} </Text>
+          <Text color="white">{contextUsagePercent}% ({fContext}/{contextLimitStr})</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="gray">{t.memory} </Text><Text color={theme.ui.comment}>█░░░░ </Text>
+          <Text color="white">{memStr}</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="gray">{t.calls} </Text><Text color={theme.ui.comment}>{'█'.repeat(Math.min(reqCount, 5)) + '░'.repeat(Math.max(0, 5-reqCount))} </Text>
+          <Text color="white">{reqCount}{t.units} ({t.today}: {dailyCalls})</Text>
+          <Text color={theme.ui.comment}> │ </Text>
+          <Text color="white">{numFiles} {t.files}</Text>
+        </Text>
+      </Box>
+
+      {/* Line 3 */}
+      <Box width="100%">
+        <Text wrap="none">
+          <Text color="gray">{t.tokens} </Text>
+          <Text color="white">{fTotal}</Text>
+          <Text color="gray"> ({t.in}: </Text>
+          <Text color="white">{fIn}</Text>
+          <Text color="gray">, {t.out}: </Text>
+          <Text color="white">{fOut}</Text>
+          <Text color="gray">, {t.cache}: </Text>
+          <Text color="white">{fCache}</Text>
+          <Text color="gray">, {t.hitRate}: </Text>
+          <Text color="white">{hitRate}%</Text>
+          <Text color="gray">)</Text>
+        </Text>
+      </Box>
     </Box>
   );
 };

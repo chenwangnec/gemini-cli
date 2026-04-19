@@ -89,6 +89,7 @@ export function deriveItemsFromLegacySettings(
     'sandbox',
     'model-name',
     'quota',
+    'token-count',
   ];
   const items = [...defaults];
 

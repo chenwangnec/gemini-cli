@@ -822,6 +822,16 @@ const SETTINGS_SCHEMA = {
         description: 'Show the model name in the chat for each model turn.',
         showInDialog: true,
       },
+      showModelStatsInChat: {
+        type: 'boolean',
+        label: 'Show Model Stats In Chat',
+        category: 'UI',
+        requiresRestart: false,
+        default: false,
+        description:
+          'Display real-time model usage statistics (requests, tokens, cache reads) below the input.',
+        showInDialog: true,
+      },
       showUserIdentity: {
         type: 'boolean',
         label: 'Show User Identity',

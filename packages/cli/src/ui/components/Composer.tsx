@@ -28,6 +28,7 @@ import { ConfigInitDisplay } from './ConfigInitDisplay.js';
 import { TodoTray } from './messages/Todo.js';
 import { useComposerStatus } from '../hooks/useComposerStatus.js';
 import { appEvents, AppEvent } from '../../utils/events.js';
+import { ModelStatsDisplay } from './ModelStatsDisplay.js';
 
 export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
   const uiState = useUIState();
@@ -176,6 +177,14 @@ export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
       {showUiDetails &&
         !settings.merged.ui.hideFooter &&
         !isScreenReaderEnabled && <Footer />}
+
+      {showUiDetails &&
+        settings.merged.ui.showModelStatsInChat &&
+        !isScreenReaderEnabled && (
+          <Box marginTop={1}>
+            <ModelStatsDisplay />
+          </Box>
+        )}
     </Box>
   );
 };

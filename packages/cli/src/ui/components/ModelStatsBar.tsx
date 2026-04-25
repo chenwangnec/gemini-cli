@@ -5,16 +5,108 @@
  */
 
 import type React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { theme } from '../semantic-colors.js';
-import { useSessionStats } from '../contexts/SessionContext.js';
-import { calculateCacheHitRate } from '../utils/computeStats.js';
+import {
+  useSessionStats,
+  type ModelMetrics,
+} from '../contexts/SessionContext.js';
+import {
+  calculateCacheHitRate,
+  calculateErrorRate,
+} from '../utils/computeStats.js';
 import { getDisplayString, LlmRole } from '@google/gemini-cli-core';
 import { useConfig } from '../contexts/ConfigContext.js';
+import { useSettings } from '../contexts/SettingsContext.js';
+
+const TRANSLATIONS: Record<string, Record<string, string>> = {
+  en: {
+    noApi: 'No API calls yet',
+    req: 'req',
+    err: 'err',
+    tokens: 'tokens',
+    in: 'in',
+    out: 'out',
+    cache: 'cache',
+    thought: 'thought',
+    tool: 'tool',
+    total: 'total',
+    speed: 'speed',
+  },
+  zh: {
+    noApi: '暂无 API 调用',
+    req: '次',
+    err: '错误',
+    tokens: '令牌',
+    in: '输入',
+    out: '输出',
+    cache: '缓存',
+    thought: '推理',
+    tool: '工具',
+    total: '总计',
+    speed: '速度',
+  },
+};
+
+interface Snapshot {
+  models: Record<string, ModelMetrics>;
+  promptCount: number;
+}
 
 export const ModelStatsBar: React.FC = () => {
   const { stats } = useSessionStats();
   const config = useConfig();
+  const settings = useSettings();
+  const lang = settings.merged.general?.language || 'zh';
+  const t = TRANSLATIONS[lang] || TRANSLATIONS['zh'];
+  const gt = (key: keyof typeof t) => t[key];
+
+  // Real-time snapshot tracking
+  const [prevSnapshot, setPrevSnapshot] = useState<Snapshot | null>(null);
+  const [deltaPerSec, setDeltaPerSec] = useState<
+    Record<string, { reqDelta: number; tokenDelta: number }>
+  >({});
+  const lastUpdateRef = useRef(Date.now());
+
+  useEffect(() => {
+    const now = Date.now();
+    const elapsed = (now - lastUpdateRef.current) / 1000;
+    if (elapsed < 0.5) return; // throttle to 2Hz
+
+    const current: Snapshot = {
+      models: stats.metrics.models,
+      promptCount: stats.promptCount,
+    };
+
+    if (prevSnapshot && elapsed > 0) {
+      const deltas: Record<string, { reqDelta: number; tokenDelta: number }> =
+        {};
+      for (const [name, metrics] of Object.entries(current.models)) {
+        const prev = prevSnapshot.models[name];
+        if (!prev) continue;
+
+        const currTotal = metrics.tokens.total;
+        const prevTotal = prev.tokens.total;
+        const reqDelta = metrics.api.totalRequests - prev.api.totalRequests;
+        const tokenDelta = currTotal - prevTotal;
+
+        if (reqDelta > 0 || tokenDelta > 0) {
+          deltas[name] = {
+            reqDelta: reqDelta / elapsed,
+            tokenDelta: tokenDelta / elapsed,
+          };
+        }
+      }
+      if (Object.keys(deltas).length > 0) {
+        setDeltaPerSec(deltas);
+      }
+    }
+
+    setPrevSnapshot(current);
+    lastUpdateRef.current = now;
+  }, [stats.metrics.models, stats.promptCount, prevSnapshot]);
+
   const { models } = stats.metrics;
 
   const activeModels = Object.entries(models).filter(
@@ -24,7 +116,7 @@ export const ModelStatsBar: React.FC = () => {
   if (activeModels.length === 0) {
     return (
       <Box>
-        <Text color={theme.text.secondary}>No API calls yet</Text>
+        <Text color={theme.text.secondary}>{gt('noApi')}</Text>
       </Box>
     );
   }
@@ -42,23 +134,29 @@ export const ModelStatsBar: React.FC = () => {
 
   return (
     <Box flexDirection="column">
-      {activeModels.map(([name, metrics], idx) => {
+      {activeModels.map(([name, metrics]) => {
         const cacheHitRate = calculateCacheHitRate(metrics);
-        const errorRate =
-          metrics.api.totalRequests > 0
-            ? (metrics.api.totalErrors / metrics.api.totalRequests) * 100
-            : 0;
+        const errorRate = calculateErrorRate(metrics);
         const avgLatency =
           metrics.api.totalRequests > 0
             ? metrics.api.totalLatencyMs / metrics.api.totalRequests
             : 0;
 
+        const subRoles = Object.entries(metrics.roles || {})
+          .filter(
+            ([role, r]) =>
+              role !== LlmRole.MAIN && r !== undefined && r.totalRequests > 0,
+          )
+          .map(([role, r]) => [role, r] as const);
+
+        const delta = deltaPerSec[name];
+        const tokPerSec = delta ? `${fmt(delta.tokenDelta)}/s` : '';
+        const reqPerSec = delta
+          ? `+${delta.reqDelta.toFixed(1)}${gt('req')}/s`
+          : '';
+
         return (
-          <Box
-            key={name}
-            flexDirection="column"
-            marginBottom={idx < activeModels.length - 1 ? 0 : undefined}
-          >
+          <Box key={name} flexDirection="column">
             {/* Model header */}
             <Box>
               <Text bold color={theme.text.accent}>
@@ -66,13 +164,22 @@ export const ModelStatsBar: React.FC = () => {
               </Text>
               <Text color={theme.text.secondary}> │ </Text>
               <Text color={theme.text.primary}>
-                {metrics.api.totalRequests} req
+                {metrics.api.totalRequests} {gt('req')}
               </Text>
+              {delta && (reqPerSec || tokPerSec) && (
+                <>
+                  <Text color={theme.text.secondary}> │ </Text>
+                  <Text color="green">{tokPerSec}</Text>
+                  <Text color={theme.text.secondary}> │ </Text>
+                  <Text color={theme.text.secondary}>{reqPerSec}</Text>
+                </>
+              )}
               {metrics.api.totalErrors > 0 && (
                 <>
                   <Text color={theme.text.secondary}> │ </Text>
                   <Text color={theme.status.error}>
-                    ✕ {metrics.api.totalErrors} err ({errorRate.toFixed(0)}%)
+                    ✕ {metrics.api.totalErrors} {gt('err')} (
+                    {errorRate.toFixed(0)}%)
                   </Text>
                 </>
               )}
@@ -82,24 +189,24 @@ export const ModelStatsBar: React.FC = () => {
 
             {/* Token row */}
             <Box>
-              <Text color={theme.text.secondary}>tokens:</Text>
+              <Text color={theme.text.secondary}>{gt('tokens')}:</Text>
               <Text color={theme.text.primary}>
                 {' '}
-                total {fmt(metrics.tokens.total)}
+                {gt('total')} {fmt(metrics.tokens.total)}
               </Text>
               <Text color={theme.text.secondary}> │ </Text>
               <Text color={theme.text.primary}>
-                in {fmt(metrics.tokens.input)}
+                {gt('in')} {fmt(metrics.tokens.input)}
               </Text>
               <Text color={theme.text.secondary}> │ </Text>
               <Text color={theme.text.primary}>
-                out {fmt(metrics.tokens.candidates)}
+                {gt('out')} {fmt(metrics.tokens.candidates)}
               </Text>
               {metrics.tokens.cached > 0 && (
                 <>
                   <Text color={theme.text.secondary}> │ </Text>
                   <Text color={theme.text.secondary}>
-                    cache {fmt(metrics.tokens.cached)} (
+                    {gt('cache')} {fmt(metrics.tokens.cached)} (
                     {cacheHitRate.toFixed(0)}%)
                   </Text>
                 </>
@@ -108,7 +215,7 @@ export const ModelStatsBar: React.FC = () => {
                 <>
                   <Text color={theme.text.secondary}> │ </Text>
                   <Text color={theme.text.secondary}>
-                    thought {fmt(metrics.tokens.thoughts)}
+                    {gt('thought')} {fmt(metrics.tokens.thoughts)}
                   </Text>
                 </>
               )}
@@ -116,44 +223,37 @@ export const ModelStatsBar: React.FC = () => {
                 <>
                   <Text color={theme.text.secondary}> │ </Text>
                   <Text color={theme.text.secondary}>
-                    tool {fmt(metrics.tokens.tool)}
+                    {gt('tool')} {fmt(metrics.tokens.tool)}
                   </Text>
                 </>
               )}
             </Box>
 
             {/* Subagent roles */}
-            {Object.entries(metrics.roles)
-              .filter(
-                ([role, r]) =>
-                  role !== LlmRole.MAIN &&
-                  r !== undefined &&
-                  r.totalRequests > 0,
-              )
-              .map(([role, roleMetrics]) => (
-                <Box key={`${name}-${role}`}>
-                  <Text color={theme.text.secondary}> ↳ {role} </Text>
-                  <Text color={theme.text.primary}>
-                    {roleMetrics.totalRequests} req
-                  </Text>
-                  <Text color={theme.text.secondary}> │ </Text>
-                  <Text color={theme.text.primary}>
-                    in {fmt(roleMetrics.tokens.input)}
-                  </Text>
-                  <Text color={theme.text.secondary}> │ </Text>
-                  <Text color={theme.text.primary}>
-                    out {fmt(roleMetrics.tokens.candidates)}
-                  </Text>
-                  {roleMetrics.tokens.cached > 0 && (
-                    <>
-                      <Text color={theme.text.secondary}> │ </Text>
-                      <Text color={theme.text.secondary}>
-                        cache {fmt(roleMetrics.tokens.cached)}
-                      </Text>
-                    </>
-                  )}
-                </Box>
-              ))}
+            {subRoles.map(([role, roleMetrics]) => (
+              <Box key={`${name}-${role}`}>
+                <Text color={theme.text.secondary}> ↳ {role} </Text>
+                <Text color={theme.text.primary}>
+                  {roleMetrics.totalRequests} {gt('req')}
+                </Text>
+                <Text color={theme.text.secondary}> │ </Text>
+                <Text color={theme.text.primary}>
+                  {gt('in')} {fmt(roleMetrics.tokens.input)}
+                </Text>
+                <Text color={theme.text.secondary}> │ </Text>
+                <Text color={theme.text.primary}>
+                  {gt('out')} {fmt(roleMetrics.tokens.candidates)}
+                </Text>
+                {roleMetrics.tokens.cached > 0 && (
+                  <>
+                    <Text color={theme.text.secondary}> │ </Text>
+                    <Text color={theme.text.secondary}>
+                      {gt('cache')} {fmt(roleMetrics.tokens.cached)}
+                    </Text>
+                  </>
+                )}
+              </Box>
+            ))}
           </Box>
         );
       })}

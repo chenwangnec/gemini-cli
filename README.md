@@ -283,7 +283,9 @@ This fork includes the following enhancements on top of upstream Gemini CLI:
 - **[Native HUD Dashboard](./docs/cli/hud-dashboard.md)** — Real-time three-line
   footer display showing model speed (tok/s), cost estimation, context/memory
   usage, daily call tracking, token breakdown, and per-tier quota progress bars
-  (Pro/Flash/Flash Lite).
+  (Pro/Flash/Flash Lite). Includes a compact **Model Stats Bar** below the input
+  prompt with real-time delta tracking (token speed, request rate) and Chinese
+  i18n support.
 - **[Global Language Setting](./docs/cli/language.md)** — Set `general.language`
   in `settings.json` to control the display language for all UI components,
   model reasoning output, and configuration dialogs. Currently supports English
@@ -294,9 +296,9 @@ This fork includes the following enhancements on top of upstream Gemini CLI:
 - **[Settings Localization](./docs/cli/settings-localization.md)** — Full
   translation of `/settings` dialog categories, labels, descriptions, and
   `/model` selection options.
-- **[Model Stats Display](./docs/cli/hud-dashboard.md#session-stats-display)** —
-  Detailed `/stats` panel with interaction summary, performance metrics, and
-  per-model token/API table.
+- **[Model Stats Bar](./docs/cli/hud-dashboard.md#model-stats-bar)** — Compact
+  real-time model stats below the input prompt with token speed (`35.1K/s`),
+  request rate (`+1.2次/s`), per-model breakdown, and role decomposition.
 
 ### Getting Started
 

@@ -1,7 +1,7 @@
 # UI Localization
 
 > **Added in:** Preview release **Related:** [HUD Dashboard](hud-dashboard.md),
-> [Settings](settings.md)
+> [Settings](settings.md), [Global Language](language.md)
 
 Gemini CLI supports localized UI strings for terminal output, dialogs, and
 status displays.
@@ -47,6 +47,24 @@ All HUD dashboard labels are localized:
 | Hit rate    | 命中率       |
 | Model usage | 模型使用情况 |
 | Resets      | 重置         |
+
+### Model Stats Bar Labels
+
+Real-time model stats below the input prompt:
+
+| English          | 中文          |
+| ---------------- | ------------- |
+| No API calls yet | 暂无 API 调用 |
+| req              | 次            |
+| err              | 错误          |
+| tokens           | 令牌          |
+| total            | 总计          |
+| in               | 输入          |
+| out              | 输出          |
+| cache            | 缓存          |
+| thought          | 推理          |
+| tool             | 工具          |
+| speed            | 速度          |
 
 ### Stats Display Labels
 
@@ -100,7 +118,17 @@ supported languages.
 
 ## Configuration
 
-Set the UI language via the HUD settings:
+Set the UI language via the global language setting:
+
+```json
+{
+  "general": {
+    "language": "zh"
+  }
+}
+```
+
+Or use the HUD-specific override:
 
 ```json
 {
@@ -110,16 +138,6 @@ Set the UI language via the HUD settings:
         "language": "zh"
       }
     }
-  }
-}
-```
-
-Or use the global language setting:
-
-```json
-{
-  "general": {
-    "language": "zh"
   }
 }
 ```
@@ -143,7 +161,9 @@ const TRANSLATIONS: Record<string, TranslationSet> = {
 Components select the active translation set based on the configured language:
 
 ```typescript
-const t = TRANSLATIONS[hudLang] || TRANSLATIONS['en'];
+const lang = settings.merged.general?.language || 'zh';
+const t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+const gt = (key: keyof typeof t) => t[key];
 ```
 
 This approach keeps translations close to the components they belong to, making

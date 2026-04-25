@@ -28,7 +28,7 @@ import { ConfigInitDisplay } from './ConfigInitDisplay.js';
 import { TodoTray } from './messages/Todo.js';
 import { useComposerStatus } from '../hooks/useComposerStatus.js';
 import { appEvents, AppEvent } from '../../utils/events.js';
-import { ModelStatsDisplay } from './ModelStatsDisplay.js';
+import { ModelStatsBar } from './ModelStatsBar.js';
 
 export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
   const uiState = useUIState();
@@ -182,7 +182,7 @@ export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
         settings.merged.ui.showModelStatsInChat &&
         !isScreenReaderEnabled && (
           <Box marginTop={1}>
-            <ModelStatsDisplay />
+            <ModelStatsBar />
           </Box>
         )}
     </Box>

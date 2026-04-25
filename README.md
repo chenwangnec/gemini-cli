@@ -276,6 +276,28 @@ gemini
 
 ## 📚 Documentation
 
+### This Fork: Custom Enhancements
+
+This fork includes the following enhancements on top of upstream Gemini CLI:
+
+- **[Native HUD Dashboard](./docs/cli/hud-dashboard.md)** — Real-time three-line
+  footer display showing model speed (tok/s), cost estimation, context/memory
+  usage, daily call tracking, token breakdown, and per-tier quota progress bars
+  (Pro/Flash/Flash Lite).
+- **[Global Language Setting](./docs/cli/language.md)** — Set `general.language`
+  in `settings.json` to control the display language for all UI components,
+  model reasoning output, and configuration dialogs. Currently supports English
+  and Chinese (`zh`).
+- **[UI Localization](./docs/cli/ui-localization.md)** — Localized
+  thinking/loading phrases, HUD labels, stats display, and model dialog strings
+  with a simple inline translation architecture.
+- **[Settings Localization](./docs/cli/settings-localization.md)** — Full
+  translation of `/settings` dialog categories, labels, descriptions, and
+  `/model` selection options.
+- **[Model Stats Display](./docs/cli/hud-dashboard.md#session-stats-display)** —
+  Detailed `/stats` panel with interaction summary, performance metrics, and
+  per-model token/API table.
+
 ### Getting Started
 
 - [**Quickstart Guide**](https://www.geminicli.com/docs/get-started) - Get up
